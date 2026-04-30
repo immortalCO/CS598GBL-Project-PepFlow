@@ -1,0 +1,37 @@
+name: pepflow
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - numpy
+      - scipy
+      - pandas
+      - pyyaml
+      - tqdm
+      - matplotlib
+      - biopython
+      - biotite
+      - lmdb
+      - joblib
+      - easydict
+      - omegaconf
+      - einops
+      - dm-tree
+      - gitpython
+      - wandb
+      - mdtraj
+      - --index-url https://download.pytorch.org/whl/cu126
+      - --extra-index-url https://pypi.org/simple
+      - torch==2.6.0
+      - torchvision==0.21.0
+      - torchaudio==2.6.0
+      - --find-links https://data.pyg.org/whl/torch-2.6.0+cu126.html
+      - torch-scatter
+
+# Notes:
+# - This file is intentionally pip-first (except python/pip bootstrap).
+# - On the current GPU node (glibc 2.28), newer torch-scatter wheels
+#   (pt27+ / cu128+) require GLIBC_2.32 and fail to load.
+# - torch==2.6.0 + cu126 is the newest tested combo that works with torch-scatter.
