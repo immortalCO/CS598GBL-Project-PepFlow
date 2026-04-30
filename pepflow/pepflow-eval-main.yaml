@@ -1,0 +1,13 @@
+name: pepflow
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - tmtools
+
+# Notes:
+# - This file captures the required main-env delta for evaluation.
+# - In this workspace, `pepflow` already had `mdtraj` and other training deps.
+# - Added package: `tmtools` (used by `eval/geometry.py:get_tm`).

@@ -1,0 +1,20 @@
+name: pepflow-eval-energy
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - numpy<2
+      - pandas
+      - biopython
+      - scipy
+      - joblib
+      - tqdm
+      - pyrosetta-installer
+
+# Notes:
+# - Target: `eval/energy.py` (PyRosetta-based energy/interface metrics).
+# - `pyrosetta-installer` is installed, but `pyrosetta` wheel itself is not auto-installed here.
+# - Optional next step:
+#   python -c "import pyrosetta_installer; pyrosetta_installer.install_pyrosetta()"

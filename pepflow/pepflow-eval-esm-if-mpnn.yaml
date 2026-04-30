@@ -1,0 +1,34 @@
+name: pepflow-eval-esm-if-mpnn
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - numpy<2
+      - pandas
+      - scipy
+      - pyyaml
+      - tqdm
+      - biopython
+      - biotite
+      - joblib
+      - omegaconf
+      - einops
+      - --index-url https://download.pytorch.org/whl/cu126
+      - --extra-index-url https://pypi.org/simple
+      - torch==2.6.0
+      - torchvision==0.21.0
+      - torchaudio==2.6.0
+      - --find-links https://data.pyg.org/whl/torch-2.6.0+cu126.html
+      - torch-scatter
+      - torch-geometric
+      - fair-esm==2.0.0
+      - proteinmpnn==0.1.3
+
+# Notes:
+# - Targets:
+#   - `eval/run_esmif.py`
+#   - `eval/run_mpnn.py`
+# - These scripts still contain hard-coded absolute paths (`RUNNER`/`HELPERS`).
+#   You will need to patch them to local tool paths before full runs.
