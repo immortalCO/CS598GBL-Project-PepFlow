@@ -17,6 +17,7 @@ torchrun --standalone --nproc_per_node=4 train_ddp_option2.py \
   --init_ckpt ./ckpts/model1.pt \
   --output_root ./outputs \
   --exp_name option2_grpo_seqonly_train4g \
+  --level 1 \
   --group_size 4 \
   --num_steps 20 \
   --lr 1e-4 \
@@ -27,7 +28,4 @@ torchrun --standalone --nproc_per_node=4 train_ddp_option2.py \
   --adv_eps 1e-6 \
   --score_clip 20.0 \
   --save_freq 100 \
-  --num_workers 4 \
-  --sample_bb false \
-  --sample_ang false \
-  --sample_seq true
+  --num_workers 4

@@ -5,20 +5,17 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_DIR}"
 
-# Reduce allocator fragmentation for large trajectory tensors.
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 export CUDA_DEVICE_MAX_CONNECTIONS=1
-
-# Optional knobs for deterministic-ish smoke behavior.
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
 
-# 4-GPU fast smoke test.
+# Level 2: known-backbone seq+angles.
 torchrun --standalone --nproc_per_node=4 train_ddp_option2.py \
   --config ./configs/learn_angle_smoke.yaml \
   --init_ckpt ./ckpts/model1.pt \
   --output_root ./outputs \
-  --exp_name option2_grpo_seqonly_smoke4g \
-  --level 1 \
+  --exp_name option2_grpo_level2_seqang_smoke4g \
+  --level 2 \
   --group_size 2 \
   --num_steps 10 \
   --lr 1e-4 \

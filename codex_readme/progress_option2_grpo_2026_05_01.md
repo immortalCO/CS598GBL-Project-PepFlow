@@ -89,6 +89,10 @@ This suggests the current post-training direction is **improving** sequence reco
 
 - `pepflow/train_ddp_option2.py`
   - DDP Option2 GRPO training logic and logging/checkpointing.
+  - now supports difficulty `--level {1,2,3}`:
+    - level1: known-backbone seq-only
+    - level2: known-backbone seq+angles
+    - level3: full design
 
 ### Stability Fixes
 
@@ -100,6 +104,9 @@ This suggests the current post-training direction is **improving** sequence reco
 - `pepflow/scripts/run_option2_ddp_smoke_4gpu.sh`
 - `pepflow/scripts/run_option2_ddp_train_4gpu.sh`
 - `pepflow/scripts/run_quick_eval_option2_gpu.sh`
+- `pepflow/scripts/run_option2_ddp_level2_smoke_4gpu.sh`
+- `pepflow/scripts/run_option2_ddp_level2_train_4gpu.sh`
+- `pepflow/scripts/run_quick_eval_option2_level2_gpu.sh`
 
 ### Outputs / Artifacts
 
@@ -113,3 +120,43 @@ This suggests the current post-training direction is **improving** sequence reco
 - `codex_readme/pepflow.txt`
   - Table 1 / Table 2 baseline references for rough comparison context.
 
+---
+
+## 6) Level2 (Seq+Angles) Experiment Update
+
+### Setting
+
+- Option2 surrogate GRPO
+- level2 mode:
+  - `sample_bb=False`
+  - `sample_ang=True`
+  - `sample_seq=True`
+- 4-GPU DDP
+
+### Bring-up and Training
+
+- Level2 4-GPU smoke:
+  - passed (`max_iters=2`, no NaN, no deadlock)
+- Level2 train run:
+  - run dir: `pepflow/outputs/option2_grpo_level2_seqang_train4g_learn_angle_2026_05_01__08_55_13/`
+  - reached and exceeded iter 100 (stopped manually after stable progress >120 for fast validation cycle)
+  - checkpoint used for eval: `checkpoints/100.pt`
+  - training remained numerically stable (no NaN, `skipped_updates` kept at 0 in monitored iterations)
+
+### Level2 Quick Eval (GPU)
+
+Output:
+- `pepflow/outputs/quick_eval_option2_level2_vs_official.json`
+- `pepflow/outputs/quick_eval_option2_level2_vs_official.log`
+
+AAR comparison under level2 sampling:
+
+- `official_model1_level2_sampling`: `46.90%`
+- `option2_level2_latest` (`iter100`): `44.59%`
+- delta: `-2.31` percentage points
+
+Interpretation:
+
+- Pipeline and training/eval infra are working normally in level2 (technical path is healthy).
+- Current level2 quality after short training (iter100 checkpoint) is **below** official baseline on AAR.
+- This indicates we should continue training longer and/or retune hyperparameters for level2 before claiming improvement.

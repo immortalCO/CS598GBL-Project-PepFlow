@@ -79,6 +79,16 @@ def parse_args():
     parser.add_argument("--score_clip", type=float, default=20.0)
     parser.add_argument("--save_freq", type=int, default=100)
     parser.add_argument("--max_iters", type=int, default=None)
+    parser.add_argument(
+        "--level",
+        type=int,
+        choices=[1, 2, 3],
+        default=1,
+        help=(
+            "Task difficulty level. "
+            "1=known-backbone seq-only, 2=known-backbone seq+angles, 3=full design."
+        ),
+    )
 
     parser.add_argument("--sample_bb", type=str2bool, default=False)
     parser.add_argument("--sample_ang", type=str2bool, default=False)
@@ -271,8 +281,23 @@ def setup_run_dir(args, config_name):
     return run_dir
 
 
+def resolve_sampling_mode(level: int):
+    level_to_mode = {
+        1: (False, False, True),
+        2: (False, True, True),
+        3: (True, True, True),
+    }
+    if level not in level_to_mode:
+        raise ValueError(f"Unsupported level: {level}")
+    return level_to_mode[level]
+
+
 def main():
     args = parse_args()
+    level_sample_bb, level_sample_ang, level_sample_seq = resolve_sampling_mode(args.level)
+    args.sample_bb = level_sample_bb
+    args.sample_ang = level_sample_ang
+    args.sample_seq = level_sample_seq
 
     if "RANK" not in os.environ or "WORLD_SIZE" not in os.environ:
         os.environ.setdefault("RANK", "0")
@@ -323,7 +348,8 @@ def main():
     logger.info(config)
     logger.info(f"Using run_dir: {run_dir}")
     logger.info(
-        "Sampling mode fixed for v1: sample_bb=%s sample_ang=%s sample_seq=%s",
+        "Sampling mode resolved from level=%s: sample_bb=%s sample_ang=%s sample_seq=%s",
+        args.level,
         args.sample_bb,
         args.sample_ang,
         args.sample_seq,
@@ -448,6 +474,7 @@ def main():
                 "successful_updates": successful_updates,
                 "rng_state": get_rng_state(local_rank),
                 "grpo_state": {
+                    "level": args.level,
                     "group_size": args.group_size,
                     "num_steps": args.num_steps,
                     "clip_eps": args.clip_eps,
