@@ -1,0 +1,1651 @@
+                                                        Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+
+                                                 Jiahan Li * 1 2 Chaoran Cheng * 3 Zuofan Wu 1 Ruihan Guo 1 Shitong Luo 1 Zhizhou Ren 1 Jian Peng 1
+                                                                                            Jianzhu Ma 1 2
+
+
+                                                                      Abstract                                 binding to other molecules, especially target proteins (recep-
+                                                                                                               tors), peptides serve as integral players in diverse biological
+arXiv:2406.00735v1 [q-bio.BM] 2 Jun 2024
+
+
+
+
+                                                 Peptides, short chains of amino acid residues,
+                                                                                                               processes, such as cellular signaling, enzymatic catalysis,
+                                                 play a vital role in numerous biological processes
+                                                                                                               and immune responses (Petsalaki & Russell, 2008; Kaspar &
+                                                 by interacting with other target molecules, offer-
+                                                                                                               Reichert, 2013). Therapeutic peptides that bind to diseases-
+                                                 ing substantial potential in drug discovery. In
+                                                                                                               associated proteins are gaining recognition as promising
+                                                 this work, we present PepFlow, the first multi-
+                                                                                                               drug candidates due to their strong affinity, low toxicity,
+                                                 modal deep generative model grounded in the
+                                                                                                               and easy delivery (Craik et al., 2013; Fosgerau & Hoff-
+                                                 flow-matching framework for the design of full-
+                                                                                                               mann, 2015; Muttenthaler et al., 2021; Wang et al., 2022).
+                                                 atom peptides that target specific protein recep-
+                                                                                                               Traditional discovery methods, such as mutagenesis and
+                                                 tors. Drawing inspiration from the crucial roles
+                                                                                                               immunization-based library construction, face limitations
+                                                 of residue backbone orientations and side-chain
+                                                                                                               due to the vast design space of peptides (Lam, 1997; Vlieghe
+                                                 dynamics in protein-peptide interactions, we char-
+                                                                                                               et al., 2010; Fosgerau & Hoffmann, 2015). To break the
+                                                 acterize the peptide structure using rigid backbone
+                                                                                                               experimental constraints, there is a growing demand for
+                                                 frames within the SE(3) manifold and side-chain
+                                                                                                               computational methods facilitating in silico peptide design
+                                                 angles on high-dimensional tori. Furthermore,
+                                                                                                               and analysis (Bhardwaj et al., 2016; Cao et al., 2022; Xie
+                                                 we represent discrete residue types in the peptide
+                                                                                                               et al., 2023; Manshour et al., 2023; Bryant & Elofsson, 2023;
+                                                 sequence as categorical distributions on the proba-
+                                                                                                               Bhat et al., 2023).
+                                                 bility simplex. By learning the joint distributions
+                                                 of each modality using derived flows and vector
+                                                 fields on corresponding manifolds, our method
+                                                 excels in the fine-grained design of full-atom pep-
+                                                 tides. Harnessing the multi-modal paradigm, our
+                                                 approach adeptly tackles various tasks such as fix-
+                                                 backbone sequence design and side-chain pack-
+                                                 ing through partial sampling. Through meticu-
+                                                 lously crafted experiments, we demonstrate that
+                                                 PepFlow exhibits superior performance in com-
+                                                 prehensive benchmarks, highlighting its signif-
+                                                 icant potential in computational peptide design
+                                                 and analysis.                                                 Figure 1. Left. A peptide binds to its target protein receptor, high-
+                                                                                                               lighting the pivotal role of backbone orientations and side-chain
+                                                                                                               interactions among key residues. Right. Every protein residue
+                                           1. Introduction                                                     consists of backbone atoms and side-chain atoms. The backbone
+                                                                                                               atoms establish a rigid frame, whereas the side-chain atoms con-
+                                           Peptides, comprising approximately 3 to 20 amino-acid               tribute to flexible side-chain angles.
+                                           residues, are single-chain proteins (Bodanszky, 1988). By           Recently, deep generative models, particularly diffusion
+                                             *                    1                  2
+                                               Equal contribution Helixon Research Institute for AI In-        probabilistic models (Sohl-Dickstein et al., 2015; Ho et al.,
+                                           dustry Research, Tsinghua University 3 Department of Computer       2020; Song & Ermon, 2019; Song et al., 2020b), have shown
+                                           Science, University of Illinois Urbana-Champaign. Correspon-        considerable promise in de novo protein design (Huang et al.,
+                                           dence to: Jiahan Li <lijiahanypc@pku.edu.cn>, Jianzhu Ma <ma-       2016). These models mainly focus on generating protein
+                                           jianzhu@tsinghua.edu.cn>.                                           backbones, represented as N rigid frames in the SE(3) man-
+                                           Proceedings of the 41 st International Conference on Machine        ifold (Trippe et al., 2022; Anand & Achim, 2022; Luo et al.,
+                                           Learning, Vienna, Austria. PMLR 235, 2024. Copyright 2024 by        2022; Wu et al., 2022; Ingraham et al., 2023; Yim et al.,
+                                           the author(s).                                                      2023b). The current state-of-the-art method, RFDiffusion
+
+                                                                                                           1
+                                Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+(Watson et al., 2022) excels in designing a diverse array of          In summary, our key contributions include:
+functional proteins with an enhanced success rate validated
+through experiments (Roel-Touris et al., 2023).                          • We introduce PepFlow, the first multi-modal generative
+Though achieving remarkable success in protein backbone                    model for designing full-atom protein structures and
+design, current generative models still encounter challenges               sequences
+in generating peptide binders conditioned on a specific tar-             • We pioneer the resolution of challenges in target-
+get protein (Bennett et al., 2023). Unlike unconditional                   specific peptide design and establish comprehensive
+generation, generating binding peptides necessitates explicit              benchmarks, including newly cleaned dataset and novel
+conditioning on binding pockets, as the bound-state struc-                 in silico metrics to evaluate generated peptides.
+tures of peptides in protein-peptide complexes partially de-
+pend on their targets (Duffaud et al., 1985; Dagliyan et al.,            • Our method showcases superior performance and great
+2011) and peptides contact accurate binding sites for bio-                 scalability across a spectrum of peptide design and
+logical functions. Furthermore, as shown in Figure 1, in                   analysis tasks encompassing sequence-structure co-
+protein-peptide interactions (Stanfield & Wilson, 1995; Ja-                design, fix-backbone sequence design, and side-chain
+cobson et al., 2002), the focus should extend beyond the                   packing.
+positions and orientations of the backbones to encompass
+the dynamics of side-chain angles, where residues inter-              2. Related Work
+act with each other through non-covalent forces formed by
+side-chain groups. Consequently, peptide generation should            Diffusion-based and Flow-based Generative Models
+consider full-atom structures rather than solely concentrat-          Trained on the denoising score matching objective (Vin-
+ing on modeling the four backbone heavy atoms. Also, since            cent, 2011), diffusion models refine samples from prior
+the structure of the functional peptide is mainly determined          Gaussian distributions into gradually meaningful outputs
+by its sequence (Whisstock & Lesk, 2003), it is essential             (Sohl-Dickstein et al., 2015; Ho et al., 2020; Song & Ermon,
+to simultaneously consider sequence and structure during              2019; Song et al., 2020b). Diffusion models are applicable
+generation to enhance consistency between them.                       in diverse modalities, e.g. images (Ho et al., 2020; Zhang
+                                                                      et al., 2023a), texts (Austin et al., 2021; Hoogeboom et al.,
+To address the challenges mentioned above, we introduce               2021) and molecules (Hoogeboom et al., 2022; Xu et al.,
+PepFlow, a multi-modal deep generative model built upon               2022; Jing et al., 2022). However, they rely on stochastic
+the Conditional Flow Matching (CFM) framework (Lip-                   estimation which leads to suboptimal probability paths and
+man et al., 2022). CFM learns the continuous normaliz-                longer sample steps (Song et al., 2020a; Lu et al., 2022).
+ing flow (Chen et al., 2018) by regressing the vector field
+that transforms prior distributions to target distributions. It       Another direction considers ODE-based continuous nor-
+has demonstrated competitive generation performance com-              malizing flows as an alternative to diffusion models (Chen
+pared to the diffusion framework and is handy to adopt on             et al., 2018). Conditional Flow Matching (CFM) (Lipman
+non-Euclidean manifolds (Chen & Lipman, 2023). We fur-                et al., 2022; Liu et al., 2022; Albergo & Vanden-Eijnden,
+ther extend CFM to modalities related to full-atom proteins.          2022) directly learns the ODE that traces the probability
+In our framework, each residue in the peptide is represented          path from the prior distribution to the target, regressing the
+as a rigid frame in SE(3) for backbone, a point on a hyper-           pushing-forward vector field conditioned on individual data
+torus corresponding to side-chain angles, and an element              points. Additionally, Riemannian Flow Matching (Chen &
+on the probability simplex indicating the discrete type. We           Lipman, 2023) extends CFM to general manifolds without
+derive analytical flows for each modality and model the               the requirement for expensive simulations (Ben-Hamu et al.,
+joint distribution of the full-atom peptide structure and se-         2022; De Bortoli et al., 2022; Huang et al., 2022). In our
+quence conditioned on the target protein. Subsequently, we            work, we use the flow matching framework to conditionally
+can design full-atom peptides by simultaneously transform-            model full-atom structures and sequences of peptide binders.
+ing from the prior distribution to the learned distribution           Though previous work existed in applying flow matching
+on each modality. Our method extends its applicability                models in molecular generation (Song et al., 2023; Bose
+to other tasks including fix-backbone sequence design and             et al., 2023; Yim et al., 2023a; 2024), they mainly focused
+side-chain packing, which is achieved through partial sam-            on specific modalities or unconditional generation.
+pling for desired modalities. Notably, there is no current            De novo Protein Design with Generative Models Genera-
+comprehensive benchmark for evaluating generative mod-                tive models have demonstrated promising performance in
+els in peptide design, we further introduce a new dataset             the design of protein-related applications including enzyme
+with in-depth metrics to quantify the qualities of generated          active sites (Yeh et al., 2023; Dauparas et al., 2023; Zhang
+peptides.                                                             et al., 2023c) and motif scaffolds (Wang et al., 2021; Trippe
+                                                                      et al., 2022; Yim et al., 2024). These methods can be cat-
+
+                                                                  2
+                                  Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+egorized into three main schemes: sequence design, struc-                 3.2. Multi-modal Flow Matching
+ture design, and sequence-structure co-design. In sequence
+                                                                          The conditional flow matching framework (Lipman et al.,
+design, protein sequences are crafted using oracle-based
+                                                                          2022) provides a simple yet powerful way to learn a prob-
+directed evolution (Jain et al., 2022; Ren et al., 2022; Khan
+                                                                          ability flow ψ that pushes the source distribution p0 to the
+et al., 2022; Stanton et al., 2022), protein language models
+                                                                          target distribution p1 of the data points x ∈ Rd . The time-
+(Madani et al., 2020; Verkuil et al., 2022; Nijkamp et al.,
+                                                                          dependent flow ψt : [0, 1] × Rd → Rd and the associated
+2023), and discrete diffusion models (Alamdari et al., 2023;
+                                                                          vector field ut : [0, 1] × Rd → Rd can be defined via the Or-
+Frey et al., 2023; Gruver et al., 2024; Yi et al., 2024).Alter-                                                    d
+                                                                          dinary Differential Equation (ODE) dt      xt = ut (xt ) where
+natively, sequences are sampled based on protein backbone
+                                                                          xt = ψt (x0 ). A time-dependent network vθ (xt , t) can be
+structures, known as fix-backbone sequence design (Ingra-
+                                                                          used to directly regress the defined vector field, known as
+ham et al., 2019; Jing et al., 2020; Hsu et al., 2022; Li
+                                                                          the Flow Matching objective (FM). However, the FM ob-
+et al., 2022; Gao et al., 2022). Recognizing the important
+                                                                          jective is intractable in practice, as we have no access to
+role of protein 3D structures, another approach involves di-
+                                                                          the closed-form vector field ut . Nonetheless, when con-
+rectly generating protein backbone structures (Trippe et al.,
+                                                                          ditioning the time-dependent vector field and probability
+2022; Anand & Achim, 2022; Luo et al., 2022; Wu et al.,
+                                                                          flow on the specific sample x1 ∼ p1 (x1 ) and the prior
+2022; Ingraham et al., 2023). These backbones are then
+                                                                          sample x0 ∼ p0 (x0 ), we can model xt = ψt (x0 |x1 ) and
+fed into fix-backbone design models to predict the corre-                                     d
+                                                                          ut (xt |x0 , x1 ) = dt xt with the tractable Conditional Flow
+sponding sequences, e.g. ProteinMPNN (Dauparas et al.,
+                                                                          Matching (CFM) objective:
+2022). Sequence-structure co-design methods jointly sam-
+ple sequence-structure pairs conditioned on provided infor-
+                                                                            L(θ) = Et,p1 (x1 ),p0 (x0 ) ∥vθ (xt , t) − ut (xt |x1 , x0 )∥2 (1)
+mation and find widespread usage in designing antibodies
+(Jin et al., 2021; Luo et al., 2022; Kong et al., 2022). Nev-
+                                                                          where t ∼ U(0, 1). It has been proved that the FM and
+ertheless, few methods focus on the interplay of side-chain
+                                                                          CFM objectives have identical gradients with respect to the
+interactions in the conditional generation of proteins or con-
+                                                                          parameters θ, and we can integrate the learned vector field
+currently producing protein structures and sequences in full
+                                                                          through time for sampling. Chen & Lipman (2023) further
+atomic detail (Martinkus et al., 2023; Kong et al., 2023;
+                                                                          extended CFM to general geometries.
+Krishna et al., 2023).
+                                                                          We employ the conditional flow matching framework to
+                                                                          learn the conditional distribution of an n-residue peptide
+3. Methods
+                                                                          based on its m-residue target protein p(C pep |C rec ). We
+3.1. Preliminary                                                          empirically decompose the joint probability into the product
+                                                                          of probabilities of four basic elements that can describe the
+A protein is a biomolecule comprised of several amino acid                sequence and structure:
+residues, each characterized by its type, backbone frame,
+and side-chain angles (Fisher, 2001), as illustrated in Figure               p(C pep |C rec ) ∝ p({aj }nj=1 |C rec )p({Rj }nj=1 |C rec )
+1. The type of the i-th residue ai ∈ {1...20} is determined                                                                                 (2)
+by its side-chain R group. The rigid frame is constructed                                      · p({xj }nj=1 |C rec )p({χj }nj=1 |C rec )
+by using the coordinates of four backbone heavy atoms
+N-Cα -C-O, with Cα located at the origin. Thus, a residue                 We elaborate on the construction of different probabil-
+frame is parameterized by a position vector xi ∈ R3 and                   ity flows on the residue’s position p(xj |C rec ), orientation
+a rotation matrix Ri ∈ SO(3) (Jumper et al., 2021). The                   p(Rj |C rec ), torsion angles p(χj |C rec ), and type p(aj |C rec )
+side-chain conformation exhibits flexibility compared to the              as follows. For simplicity, we initially focus on the single
+rigid backbone and can be represented as up to four torsion               j-th residue in the peptide.
+angles corresponding to rotatable bonds between side-chain
+atoms χi ∈ [0, 2π)4 . We further consider the rotatable                   Euclidean CFM for Position We first adopt Euclidean
+backbone torsion angle ψ i ∈ [0, 2π) which governs the                    CFM for the position vector xj ∈ R3 . As a common prac-
+position of the O atom. Consequently, a protein with n                    tice, we choose the isotropic Gaussian N (0, I3 ) as the prior,
+residues can be sufficiently and succinctly parameterized as              and our target distribution is p(xj |C rec ). The conditional
+{(ai , Ri , xi , χi )}ni=1 , where χi [0] = ψ i and χi ∈ [0, 2π)5 .       flow is defined as linear interpolation connecting sampled
+                                                                          noise xj0 ∼ N (0, I3 ) and the data point xj1 ∼ p(xj |C rec ).
+In this work, we focus on designing peptides based on                     The linear interpolation favors a straight trajectory, and
+their target proteins. Formally, given a n-residue peptide                such a property contributes to the efficiency of training and
+C pep = {(aj , Rj , xj , χj )}nj=1 and its m-residue target pro-          sampling, as it is the shortest path between two points in Eu-
+tein (receptor) C rec = {(ai , Ri , xi , χi )}mi=1 , we aim to            clidean space (Liu et al., 2022). The conditional vector field
+model the conditional joint distribution p(C pep |C rec ).                upos
+                                                                            t is derived by taking the time derivative of the linear
+
+
+                                                                      3
+                                   Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+
+
+
+Figure 2. Illustration of PepFlow Architecture. The encoder encodes the receptor as the context for peptide generation. Flows for four
+different modalities are then constructed: spherical for the orientation R, Euclidean for the translation x, toric for the torsion angles χk ,
+and categorical for the type distribution p. The multi-modal flow matching decoder finally recovers the full-atom peptide structure and
+sequence iteratively using the Euler method.
+
+
+flow ψtpos :                                                               the paths of the minimum rotational distance between two
+                                                                           orientations and provide a natural way to interpolate and
+               ψtpos (xj0 |xj1 ) = txj1 + (1 − t)xj0             (3)       evolve orientations in a manner that respects the underlying
+                                               xj1
+                                                 −     xjt                 geometry of the rotation manifold (Bose et al., 2023; Yim
+           upos j j      j      j    j
+            t (xt |x1 , x0 ) = x1 − x0 =                         (4)       et al., 2023a). The conditional flow ψ ori and vector field
+                                                1−t
+                                                                           uori
+                                                                             t are established by the geodesic interpolation between
+We use a time-dependent translation-invariant neural net-                  R0j ∼ U (SO(3)) and R1j ∈ p(Rj |C rec ) with the geodesic
+work v pos to predict the conditional vector field based on                distance decreasing linearly by time:
+the current interpolant xt and the timestep t. The CFM
+objective of the j th residue is formulated as:                                            ψtori (R0j |R1j ) = expRj (tlogRj (R1j ))                    (7)
+                                                                                                                          0             0
+
+                                                                2                                                  logRj R1j
+  Lpos
+   j = Et,p(xj ),p(xj ) v
+                          pos j
+                             (xt , t, C rec ) − (xj1 − xj0 )                           uori j   j    j
+                                                                                        t (Rt |R0 , R1 ) =
+                                                                                                                       t
+                                                                                                                                                        (8)
+                  1     0                                       2                                                     1−t
+                                                          (5)
+During generation, we first sample from the prior xj0 ∼                    where exp and log are the exponential and logarithm maps
+N (0, I3 ) and solve the probability flow with the learned                 on SO(3) that can be computed efficiently using Rodrigues’
+predictor v pos using the N -step forward Euler method to get              formula (see Appendix A.1). A rotation-equivariant neural
+the position of residue j with t = {0, ..., NN−1 }:                        network v ori is applied to predict the vector field, repre-
+                                                                           sented as rotation vectors. The CFM objective on SO(3) is
+                                1 pos j                                    formulated as:
+               xjt+ 1 = xjt +     v (xt , t, C rec )             (6)
+                   N            N                                                                                                                   2
+                                                                                                                                        logRj R1j
+                                                                           Ljori   = Et,p(Rj ),p(Rj ) v   ori
+                                                                                                                (Rtj , t, C rec )   −        t
+
+Spherical CFM for Orientation The orientation of the                                        1     0                                         1−t
+                                                                                                                                                    SO(3)
+residue j can be represented as a rotation matrix Rj ∈                                                                             (9)
+SO(3) concerning the global frame. The 3D rotation group                   where the vector field lies on the tangent space so(3) of
+SO(3) is a smooth Riemannian manifold and its tangent                      SO(3) and the norm is induced by the canonical metric
+so(3) is a Lie group containing skew-symmetric matrices.                   on SO(3). During inference, we initiate the process from
+An element in so(3) can also be interpreted as an infinites-               R0j ∼ U (SO(3)) and proceed by taking small steps along
+imal rotation around a certain axis and characterized as a                 the geodesic path in SO(3) over the timestep t:
+rotation vector in R3 (Blanco-Claraco, 2021). We choose                                                                        
+the uniform distribution over SO(3) as our prior distribution.                        j                 1 ori j           rec
+                                                                                    Rt+  1  =  expRtj     v  (R  t , t, C     )   (10)
+Just as flow matching in Euclidean space uses the shortest                               N              N
+distance between two points, we can envision establishing
+flows by following the corresponding geodesics in the con-                 Toric CFM for Angles An angle taking values in [0, 2π)
+text of SO(3) (Lee, 2018). Geodesics on SO(3) represent                    can be represented as a point on the unit circle S1 , and
+
+                                                                       4
+                                        Full-Atom Peptide Design based on Multi-modal Flow Matching
+                                                                                                                           Pd
+the torsion vector χj consisting 5 angles lies on the 5-                           ∆d−1 := {x ∈ Rd : 0 ≤ x[i] ≤ 1, i=1 x[i] = 1} is a
+dimensional flat torus Td = (S1 )5 as the Cartesian product                        smooth manifold in Rd (Wang & Carreira-Perpinán, 2013;
+of 5 one-dimensional unit circles. The flat torus T5 can                           Richemond et al., 2022; Floto et al., 2023), where each
+also be viewed as the quotient space R5 /(2πZ)5 that in-                           point in ∆d−1 represents a categorical distribution over the
+herits its Riemannian metric from Euclidean space. There-                          d classes. Though we can directly perform flow matching
+fore, the exponential and logarithm maps are similar to                            on ∆d−1 (Li, 2018), we choose to construct conditional flow
+those in Euclidean space except for the equivalence rela-                          on the logit space in Rd . We choose our prior distribution of
+tion about the periodicity of 2π. We choose the uniform                            logit as N (0, K 2 I) such that the prior distribution on sim-
+distribution on [0, 2π]5 as the prior distribution, and the con-                   plex becomes the logistic-normal distribution by construct
+ditional flow between sampled points χj0 ∼ U ([0, 2π]5 ) and                       (Atchison & Shen, 1980). The conditional flow ψttype and
+χj1 ∼ p(χj |C rec ) is constructed along the geodesic:                             vector field on the logit space is defined as:
+
+                  wrap(u) = (u + π)%(2π) − π                            (11)                     ψttype (sj0 |sj1 ) = tsj1 + (1 − t)sj0         (17)
+             ψtang (χj0 |χj1 )   =   (χj0   +   t(χj1   −   χj0 ))%2π   (12)                                                     sj1−     sjt
+                                                              !                               utype j j j          j    j
+                                                                                               t (st |s1 , s0 ) = s1 − s0 =                     (18)
+                                                 χj1
+                                                   −    χjt                                                                        1−t
+         uang j j      j
+          t (χt |χ0 , χ1 )       = wrap                                 (13)
+                                                  1−t
+                                                                   The linear interpolations between sj1 and sj0 induce a geo-
+A neural network v ang is applied to predict the vector field      metric mean of the prior logit-normal distribution and target
+                                      5
+that lies on the tangent space of T , leading to the CFM           distribution p(aj |C rec ). This induces a time-dependent inter-
+objective on torus as:                                             polant between points on the probability simplex, capturing
+                                                                   the evolving relationship between the prior and target dis-
+                                                               ! 2 tributions. Similarly, a neural network v type is applied to
+                                                         j   j
+                                                        χ − χ0
+Ljang = Et,p(χj ),p(χj ) wrap v ang (χjt , t, C rec ) − 1          predict the vector field on the logit space, and the CFM
+               1     0                                   1−t       objective is:
+                                                           (14)
+Instead of using the standard distance of the Euclidean space,                                                                          2
+we use the flat metric on Td for comparing the predicted              Ltype
+                                                                        j    = Et,p(sj ),p(sj ) v type (sjt , t, C rec ) − (sj1 − sj0 )
+                                                                                       1    0                                           2
+and ground truth vector field, which enhances the network’s                                                                             (19)
+awareness of angular periodicity on the toric geometry. Dur-
+                                                                   During inference, we perform Euler steps to solve the prob-
+ing inference, we take Euler steps from prior sample points
+  j              5                                    5            ability flow on the logit space, residue types can be sampled
+χ ∼ U ([0, 2π] ) along the geodesic path in T :
+                                                                   from the corresponding probability vector on the simplex:
+                                                
+                           1
+         χjt+ 1 = χjt + v ang (χjt , t, C rec ) %2π        (15)                                      1
+             N             N                                                       sjt+ 1 = sjt + v type (sjt , t, C rec )              (20)
+                                                                                         N          N
+                                                                                ajt+1/N ∼ softmax(sjt+ 1 )                              (21)
+Simplex CFM for Type The above flow-matching meth-                                                               N
+
+ods apply to values in continuous spaces. The residue
+type aj ∈ {1...20}, however, admits a discrete categori-           To improve generation consistency between the logit and
+cal value. To map the discrete residue type aj to a con-           simplex space, we additionally map the predicted discrete
+tinuous space, we adopt a soft one-hot encoding operation          residue back to the logit space during each iteration as
+logit(aj ) = sj ∈ R20 with a constant value K > 0, and             sjt+1/N = logit(ajt+ 1 ).
+                                                                                                           N
+the i-th value in sj is                                                            Combining all modalities, we obtain the final multi-modal
+                                                                                   conditional flow matching objective for residue j as the
+                           (
+                    j       K,  i = aj
+                   s [i] =                                              (16)       weighted sum of different conditional flow matching objec-
+                            −K, otherwise                                          tives:
+sj can be understood as the logits of the probabilities
+(Han et al., 2023), and softmax(sj ) becomes a normal-                              Ljcfm = Et (λpos Lpos ori ori
+                                                                                                      j +λ Lj +λ
+                                                                                                                  ang ang
+                                                                                                                     Lj +λtype Ltype
+                                                                                                                                j ) (22)
+ized probability distribution with the j-th term close to 1
+and other terms close to 0. This representation promotes                           After discussing the multi-modal flow for modeling the
+the underlying categorical distribution with a probability                         factorized distribution of position, orientation, residue type,
+mass centered on the correct residue type aj . In other                            and side-chain torsion angles for a single residue j, we
+word, softmax(sj ) is a point on the 20-category proba-                            further extend our method for modeling the joint distribution
+bility simplex ∆19 . The d-categorical probability simplex                         p(C pep |C rec ) in the following subsection.
+
+                                                                               5
+                                    Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+3.3. PepFlow Architecture                                                     Algorithm 2 Sampling with Multi-Modal PepFlow
+Network Parametrization As the joint distribution of the                       1: Encode target h, z = Enc(C rec )
+                                                                                                      pep      j   j   j    j
+peptide is conditioned on its target protein receptor, we em-                  2: Sample prior state C0 = {(a0 , R0 , x0 , χ0 )}nj=1
+ploy a geometric equivariant encoder to capture the context                    3: for t ← 1 to N do
+                                                                                                               pep
+information of the target protein. Conversely, the above flow                  4:   Decode predicted peptide C Nt = Dec(C pep  t−1 , t, h, z)
+                                                                                                                                  N
+matching model can be viewed as a decoder for regressing                       5:    Calculate vector fields and update the peptide C pep
+                                                                                                                                       t  =
+                                                                                                                                       N
+the vector fields of the generated peptide, as depicted in                                          pep
+                                                                                    EulerStep(C Nt , C pep   1
+                                                                                                       t−1 , N )
+Figure 2. In the model pipeline, the encoder Enc takes the                                              N
+
+sequence and structure of the target protein C rec , producing                 6: end for
+                                                                                           pep
+the hidden residue representations h and the residue-pair                      7: return C 1
+embedding z. Subsequently, we sample a specific timestep
+t ∼ U (0, 1) to construct the multi-modal flows where time-                   a prior state of the peptide is sampled. Subsequently, for
+dependent vector fields are learned simultaneously for each                   each timestep of the sampling, the decoder predicts the
+modality of the peptide C pep . The time-dependent decoder                    recovered peptide state, and vector fields are calculated for
+network Dec, mainly based on the Invariant Point Attention                    each modality of the current state. The current state of the
+scheme (Jumper et al., 2021), takes the timestep t, the in-                   peptide is then updated using the Euler method following the
+terpolant state of the peptide Ctpep = {(sjt , Rtj , xjt , χjt )}nj=1 ,       derived vector fields, and the updated peptide is considered
+and the residue and pair embeddings as input. Rather than                     as the input of the decoder in the subsequent iteration. In the
+directly regressing the vector fields, the decoder first re-                  final step, we reconstruct the full-atom peptide using local
+                                pep              j
+covers the original peptide C 1 = {(sj1 , R1 , xj1 , χj1 )}nj=1               coordinate transformations of the backbone and side-chain
+which allows for better training efficiency and the use of                    rigid groups (Jumper et al., 2021).
+auxiliary loss. In this way, the CFM objectives for differ-                   Noticeably, for a specific residue, the generation of a par-
+ent modalities are reparametrized as the distance between                     ticular modality is not only dependent on the update of that
+the vector fields derived from ground truth elements and                      modality but also influenced by the states of other modalities
+those derived from predicted elements (see Appendix A.2).                     and other residues within the peptide. This interdependence
+The overall training objective is the sum of reparameter-                     highlights the intricate relationship between different modal-
+ized CFM objectives, considering the expectation over each                    ities and residues, illustrating the complex nature of the joint
+timestep and each residue in the peptide.                                     distribution captured by our designed decoder network.
+                                                                              Furthermore, beyond the joint design of sequences and struc-
+                                                     
+                 1  X j
+      L = Et          (Lcfm + λaux (Ljbb + Ljtor ))            (23)         tures, we can construct partial states tailored for peptide
+                 n j                                                          design tasks that specifically emphasize the generation of a
+                                                                              particular modality while keeping other modalities fixed. In
+Here we also use the backbone position loss Lbb and the tor-                  the context of side-chain packing, we maintain the ground
+sion angle loss Ltor as auxiliary structure losses to improve                 truth sequence and the backbone structure (i.e., types, posi-
+the generation quality, incorporating information from dif-                   tions, and orientations), and exclusively sample the torsion
+ferent modalities (see Appendix A.5). The training process                    angles. Conversely, in fix-backbone sequence design, our
+is outlined in Algorithm 1.                                                   focus lies in sampling sequences while holding constant the
+                                                                              backbone positions and orientations.
+Algorithm 1 Training Multi-Modal PepFlow
+ 1: while not converged do
+                                                                              4. Experiment
+ 2:   Sample protein-peptide pair C rec , C pep from dataset
+ 3:   Encode target h, z = Enc(C rec )                                        In this section, we conduct a comprehensive evaluation of
+ 4:   Sample prior state C0pep = {(aj0 , R0j , xj0 , χj0 )}nj=1               PepFlow across three tasks: (1) Sequence-Structure Co-
+ 5:   Sample t ∼ U (0, 1)                                                     design, (2) Fix-Backbone Sequence Design, and (3) Side-
+                                   pep
+ 6:   Decode predicted peptide C = Dec(Ctpep , t, h, z)                       Chain Packing. We introduce a new benchmark dataset de-
+ 7:   Calculate the vector fields and the loss according to                   rived from PepBDB (Wen et al., 2019) and Q-BioLip (Wei
+      Eq.(23)                                                                 et al., 2024). After removing duplicate entries and apply-
+ 8:   Update the parameters of Enc and Dec                                    ing empirical criteria (e.g. resolution <4Å, peptide length
+ 9: end while                                                                 between 3 − 25), we cluster these complexes according to
+                                                                              40% peptide sequence identity using mmseqs2 (Steinegger
+Sampling Process The sampling algorithm is outlined in                        & Söding, 2017). This results in 8, 365 non-orphan com-
+Algorithm 2. During sampling, the target protein is encoded                   plexes distributed across 292 clusters. To construct the test
+only once and is fed into each step of decoding. Initially,                   set, We randomly select 10 clusters containing 158 com-
+
+                                                                          6
+                                Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+
+                              Table 1. Evaluation of methods in the sequence-structure co-design task.
+                                            Geometry                                   Energy                          Design
+                           AAR % ↑    RMSD Å ↓    SSR % ↑    BSR % ↑      Stability % ↑   Affinity % ↑   Designability % ↑     Diversity ↑
+  RFdiffusion                40.14       4.17        63.86        26.71        26.82            16.53          78.52               0.38
+  ProteinGenerator           45.82       4.35        29.15        24.62        23.48            13.47          71.82               0.54
+  Diffusion                  47.04       3.28        74.89        49.83        15.34            17.13          48.54               0.57
+  PepFlow w/Bb               50.46       2.30        82.17        82.17        14.04            18.10          50.03               0.64
+  PepFlow w/Bb+Seq           53.25       2.21        85.22        85.19        19.20            19.39          56.04               0.50
+  PepFlow w/Bb+Seq+Ang       51.25       2.07        83.46        86.89        18.15            21.37          65.22               0.42
+
+
+
+
+Figure 3. Left: RMSD of designed peptides of different lengths. (Short: 3-9, Medium: 10-14, Long: 15-25) Middle: Ramachandran plot
+of PepFlow generated and native peptides. Right: Binding energy distributions of generated and native peptides. (lower is better)
+
+                                                                       Baselines We use two state-of-the-art protein design models
+                                                                       as baselines. RFDiffusion (Watson et al., 2022) generates
+                                                                       protein backbones, and sequences are later predicted by
+                                                                       ProteinMPNN (Dauparas et al., 2022). ProteinGenerator
+                                                                       (Lisanza et al., 2023) improves RFDiffusion by jointly sam-
+                                                                       pling backbones and corresponding sequences. These two
+                                                                       methods do not consider side-chain conformations.
+                                                                       Metrics We assess the generated peptides from three per-
+                                                                       spectives. (1) Geometry. The generated peptides should
+                                                                       exhibit sequences and structures similar to those of the na-
+                                                                       tive ones. The amino acid recovery rate (AAR) measures
+Figure 4. Three examples of the generated peptides. Top: native
+                                                                       the sequence identity between the generated and the ground
+peptides; Bottom: generated peptides. PDB: 3MXY, 6OX4, 5DJY.
+                                                                       truth. The root-mean-square deviation (RMSD) aligns the
+                                                                       complex by peptide structures and calculates the Cα RMSD.
+plexes, while the remaining complexes are used for training            The secondary-structure similarity ratio (SSR) calculates
+and validation.                                                        the proportion of shared secondary structures. The binding
+We implement and compare the performance of three vari-                site ratio (BSR) is the overlapping ratio between the bind-
+ants of our model. PepFlow w/Bb only samples backbones;                ing site of the generated peptide and the native binding site
+PepFlow w/Bb+Seq is used for modeling backbones and                    on the target protein. (2) Energy. We aim to design high-
+sequences jointly; and PepFlow w/Bb+Seq+Ang finally                    affinity peptide binders that stabilize the protein-peptide
+model the full-atom distributions of peptides. Experimental            complexes. Affinity is the percentage of the designed pep-
+details and additional results are provided in Appendix B.             tides with higher binding affinities (lower binding energies)
+                                                                       than the native peptide, and Stability calculates the percent-
+4.1. Sequence-Structure Co-design                                      age of complex structures that are at more stable (lower
+                                                                       total energy) states than the native ones. The energy terms
+This task requires the generation of both the sequence and             are calculated by Rosetta (Alford et al., 2017). (3) Design.
+bound-state structure of the peptide based on its target pro-          Designablity measures the consistency between generated
+tein. Models take the full-atom structure of the target protein        sequences and structures by counting the fractions of se-
+as input and generate bound-state peptides. We generate 64             quences that can fold into similar structures as the corre-
+peptides for each target protein for every evaluated model.
+
+                                                                   7
+                                            Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+sponding generated structure. We utilize ESMFold (Lin                                           2022), a GNN-base model, and ESM-IF (Hsu et al., 2022),
+et al., 2023) to refold sequences and use Cα RMSD <2Åas                                        based on GVP-Transformer (Jing et al., 2020).
+designable criteria. Diversity is the average of one minus
+                                                                                                Metrics In addition to AAR used in co-design task, we
+the pair-wise TM-Score (Zhang & Skolnick, 2005) among
+                                                                                                calculate Worst as the lowest recovery rate. Likeness is
+the generated peptides, reflecting structural dissimilarities.
+                                                                                                the negative log-likelihood score of the sequence from Prot-
+Results As indicated in Table 1, PepFlow is capable of                                          GPT2 (Ferruz et al., 2022), indicating how closely the gen-
+generating peptides that closely resemble native ones with                                      erated sequence aligns with the native protein distribution.
+improved binding affinities. The distributions of generated                                     Diversity represents the average pairwise Hamming Dis-
+backbone torsion angles also closely align with the native                                      tance between generated sequences.
+peptide distributions (see Figure 3). Since the generation
+                                                                                                Results As presented in Table 2, our models achieve higher
+of structure and sequence is decoupled, RFDiffusion ex-
+                                                                                                recovery rates and better diversities, showcasing the effec-
+hibits the lowest recovery, whereas PepFlow achieves lower
+                                                                                                tiveness of our proposed simplex flow matching. We also
+RMSD and higher AAR by incorporating the sequence
+                                                                                                observe a slight decrease in the recovery rate with the in-
+modality. Moreover, the explicit modeling of side-chain
+                                                                                                clusion of angle modeling. This might be attributed to the
+conformations effectively captures the fine-grained struc-
+                                                                                                fact that some amino acids share similar side-chain compo-
+tures in protein-peptide interactions, enhancing the ability of
+                                                                                                sitions and physicochemical properties (e.g. Ser and Thr,
+generated peptides to accurately bind to designated binding
+                                                                                                Arg and Lys), leading the model to generate a physicochem-
+sites. Consequently, the proportion of peptides with higher
+                                                                                                ically feasible but different residue. Generating both the
+affinity is also increased. We also observe that baselines out-
+                                                                                                sequences and side-chain angles leads to higher likeness
+performed our models in terms of Stability and Designabil-
+                                                                                                and lower diversity.
+ity, probably because they are trained on the entire PDB
+structures and are biased toward structures with more stable
+motifs. Additionally, we note that modeling more modali-                                        4.3. Side-chain Packing
+ties leads to a slightly lower diversity of refolded structures.                                This task predicts the side-chain angles of the peptide. We
+Nevertheless, our results demonstrate that incorporating se-                                    generate 64 side-chain conformations for each peptide by
+quence and side-chain conformation, beyond modeling the                                         each model and apply the partial sampling scheme of our
+backbone, significantly improved the model’s performance,                                       model to recover side-chain angles.
+underscoring the importance of full-atom modeling.
+Visualizations We further present three examples of gener-                                      Table 3. Evaluation of methods in the side-chain packing task.
+                                                                                                                                   MSE ◦ ↓
+ated full-atom peptides generated by full-atom PepFlow in
+                                                                                                                          χ1      χ2      χ3      χ4     Correct % ↑
+Figure 4. We observe that PepFlow consistently produces
+                                                                                                 Rosseta                 38.31   43.23   53.61   71.67     57.03
+peptides with topologically resembling geometries, regard-                                       SCWRL4                  30.06   40.40   49.71   53.79     60.54
+less of the native length. Remarkably, the generated peptides                                    DLPacker                22.44   35.65   58.53   61.70     60.91
+exhibit similar side-chain compositions and conformations,                                       AttnPacker              19.04   28.49   40.16   60.04     61.46
+                                                                                                 DiffPack                17.92   26.08   36.20   67.82     62.58
+facilitating effective interaction with the target protein at the                                PepFlow w/Bb+Seq+Ang    17.38   24.71   33.63   58.49     62.79
+correct binding site.
+                                                                                                Baselines Two energy-based methods: RossettaPacker (Le-
+4.2. Fix-backbone Sequence Design                                                               man et al., 2020), SCWRL4 (Krivov et al., 2009), and
+This task involves designing peptide sequences based on the                                     learning-based models: DLPacker (Misiura et al., 2022),
+structure of the complex without side-chains. We generate                                       AttnPacker (McPartlon & Xu, 2022), DiffPack (Zhang
+64 sequences for each peptide using each model. For our                                         et al., 2023b).
+models, we apply the partial sampling scheme to recover                                         Metrics We use the Mean Absolute Error (MAE) of pre-
+the sequence.                                                                                   dicted four torsion angles. Due to the flexibility of side-
+                                                                                                chains, We also include the proportion of the Correct pre-
+Table 2. Evaluations of methods in the fix-backbone sequence de-
+                                                                                                dictions that deviate within 20◦ around the ground truth.
+sign task.
+                        AAR % ↑   Worst % ↑   Likeness ↓   Diversity ↑   Designbility % ↑       Results As shown in Table 3, our partially sampling
+ ProteinMPNN             53.28      45.99       -8.42        15.33            60.55
+ ESM-IF                  43.51      36.18       -8.39        13.76            53.76             PepFlow outperforms all other baselines across all four
+ PepFlow w/Bb+Seq        56.40      46.59       -8.26        23.38            59.72
+ PepFlow w/Bb+Seq+Ang    54.32      44.48       -8.58        20.65            65.48
+                                                                                                side-chain angles. Notably, χ1 and χ2 angles are easier
+                                                                                                to predict than χ3 and χ4 . Our method also achieves the
+Baselines We use two inverse folding models which can                                           best correct rates, as our proposed toric flow can precisely
+design peptide sequences conditioned on the rest of the                                         capture the reasonable distribution of the side-chain angles
+complex as our baselines: Protein-MPNN (Dauparas et al.,                                        and the plausible side-chain dynamics during the interaction
+
+                                                                                            8
+                                Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+between peptides and target proteins.                                   pp. 2023–09, 2023.
+
+                                                                      Albergo, M. S. and Vanden-Eijnden, E. Building normal-
+5. Conclusion                                                           izing flows with stochastic interpolants. arXiv preprint
+In this study, we introduced PepFlow, a novel flow-based                arXiv:2209.15571, 2022.
+generative model tailored for target-specific full-atom pep-
+                                                                      Alford, R. F., Leaver-Fay, A., Jeliazkov, J. R., O’Meara,
+tide design. PepFlow characterizes each modality of peptide
+                                                                        M. J., DiMaio, F. P., Park, H., Shapovalov, M. V., Renfrew,
+residues into the corresponding manifold and constructs an-
+                                                                        P. D., Mulligan, V. K., Kappel, K., et al. The rosetta all-
+alytical flows and vector fields for each modality. Through
+                                                                        atom energy function for macromolecular modeling and
+multi-modal flow matching objectives, PepFlow excels in
+                                                                        design. Journal of chemical theory and computation, 13
+generating full-atom peptides, capturing the intrinsic geo-
+                                                                        (6):3031–3048, 2017.
+metric characteristics across different modalities. In our
+newly designed comprehensive benchmarks, PepFlow has                  Anand, N. and Achim, T. Protein structure and sequence
+demonstrated promising performance by modeling full-atom                generation with equivariant denoising diffusion proba-
+joint distributions and exhibits potential applications in pro-         bilistic models. arXiv preprint arXiv:2205.15019, 2022.
+tein design beyond peptides, such as antibody and enzyme
+design. Nevertheless, PepFlow faces limitations in diversity          Atchison, J. and Shen, S. M. Logistic-normal distributions:
+during generation, stemming from the deterministic nature               Some properties and uses. Biometrika, 67(2):261–272,
+of ODE-based flow. Furthermore, its current incapability                1980.
+for property-guided generation, a common requirement in
+protein optimization, represents an area for improvement.             Austin, J., Johnson, D. D., Ho, J., Tarlow, D., and Van
+Despite these considerations, PepFlow stands out as a po-               Den Berg, R. Structured denoising diffusion models in
+tent and versatile tool for computational peptide design and            discrete state-spaces. Advances in Neural Information
+analysis.                                                              Processing Systems, 34:17981–17993, 2021.
+
+                                                                      Baines, I. C. and Colas, P. Peptide aptamers as guides for
+Impact Statement                                                        small-molecule drug discovery. Drug discovery today, 11
+                                                                        (7-8):334–341, 2006.
+PepFlow can contribute to the advancement of computa-
+tional biology, particularly in the field of protein design,          Ben-Hamu, H., Cohen, S., Bose, J., Amos, B., Nickel, M.,
+offering a valuable tool for designing therapeutic peptides             Grover, A., Chen, R. T., and Lipman, Y. Matching nor-
+with potential benefits for human health. While our primary             malizing flows and probability paths on manifolds. In
+focus is on positive applications, such as drug development             International Conference on Machine Learning, pp. 1749–
+and disease treatment, we recognize the importance of con-              1763. PMLR, 2022.
+sidering potential risks associated with any powerful tech-
+nology. There is a possibility that our algorithm could be            Bennett, N. R., Coventry, B., Goreshnik, I., Huang, B.,
+misused for designing harmful substances, posing ethical                Allen, A., Vafeados, D., Peng, Y. P., Dauparas, J., Baek,
+concerns. However, we emphasize the responsible and eth-                M., Stewart, L., et al. Improving de novo protein binder
+ical use of our tool, urging the scientific community and               design with deep learning. Nature Communications, 14
+practitioners to employ it judiciously for constructive pur-            (1):2625, 2023.
+poses. Our commitment to ethical practices aims to ensure
+the positive impact of PepFlow on society.                            Bhardwaj, G., Mulligan, V. K., Bahl, C. D., Gilmore, J. M.,
+                                                                        Harvey, P. J., Cheneval, O., Buchko, G. W., Pulavarti,
+                                                                        S. V., Kaas, Q., Eletsky, A., et al. Accurate de novo
+Acknowledgements                                                        design of hyperstable constrained peptides. Nature, 538
+This work was supported by the National Key Research and                (7625):329–335, 2016.
+Development Program of China grants 2022YFF1203100.
+                                                                      Bhat, S., Palepu, K., Yudistyra, V., Hong, L., Kavirayuni,
+Thanks to all my friends for their encouragement, help, and
+                                                                        V. S., Chen, T., Zhao, L., Wang, T., Vincoff, S., and Chat-
+love.
+                                                                        terjee, P. De novo generation and prioritization of target-
+                                                                        binding peptide motifs from sequence alone. bioRxiv, pp.
+References                                                              2023–06, 2023.
+Alamdari, S., Thakkar, N., van den Berg, R., Lu, A. X., Fusi,
+                                                                      Blanco-Claraco, J. L. A tutorial on se(3) transformation
+  N., Amini, A. P., and Yang, K. K. Protein generation with
+                                                                        parameterizations and on-manifold optimization. arXiv
+  evolutionary diffusion: sequence is all you need. bioRxiv,
+                                                                        preprint arXiv:2103.15980, 2021.
+
+                                                                  9
+                                 Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+Bodanszky, M. Peptide chemistry. A Practical Textbook,,                    generative modelling. Advances in Neural Information
+ 1988.                                                                     Processing Systems, 35:2406–2422, 2022.
+
+Bose, A. J., Akhound-Sadegh, T., Fatras, K., Huguet, G.,                 Duffaud, G. D., Lehnhardt, S. K., March, P. E., and Inouye,
+  Rector-Brooks, J., Liu, C.-H., Nica, A. C., Korablyov,                   M. Structure and function of the signal peptide. In
+  M., Bronstein, M., and Tong, A. Se (3)-stochastic flow                   Current topics in membranes and transport, volume 24,
+  matching for protein backbone generation. arXiv preprint                 pp. 65–104. Elsevier, 1985.
+  arXiv:2310.02391, 2023.
+                                                                         Eirı́ksdóttir, E., Konate, K., Langel, Ü., Divita, G., and
+Bryant, P. and Elofsson, A. Peptide binder design with                     Deshayes, S. Secondary structure of cell-penetrating
+  inverse folding and protein structure prediction. Commu-                 peptides controls membrane interaction and insertion.
+  nications Chemistry, 6(1):229, 2023.                                     Biochimica et Biophysica Acta (BBA)-Biomembranes,
+                                                                           1798(6):1119–1128, 2010.
+Cao, L., Coventry, B., Goreshnik, I., Huang, B., Sheffler,
+  W., Park, J. S., Jude, K. M., Marković, I., Kadam, R. U.,
+                                                                         Ferruz, N., Schmidt, S., and Höcker, B. Protgpt2 is a deep
+  Verschueren, K. H., et al. Design of protein-binding
+                                                                           unsupervised language model for protein design. Nature
+  proteins from the target structure alone. Nature, 605
+                                                                           communications, 13(1):4348, 2022.
+  (7910):551–560, 2022.
+                                                                         Fisher, M. Lehninger principles of biochemistry, ; by david
+Chaudhury, S., Lyskov, S., and Gray, J. J. Pyrosetta: a script-
+                                                                           l. nelson and michael m. cox. The Chemical Educator, 6:
+  based interface for implementing molecular modeling
+                                                                           69–70, 2001.
+  algorithms using rosetta. Bioinformatics, 26(5):689–691,
+  2010.                                                                  Floto, G., Jonsson, T., Nica, M., Sanner, S., and Zhu, E. Z.
+Chen, R. T. and Lipman, Y. Riemannian flow matching on                     Diffusion on the probability simplex. In ICML 2023
+  general geometries. arXiv preprint arXiv:2302.03660,                     Workshop: Sampling and Optimization in Discrete Space,
+  2023.                                                                    2023.
+
+Chen, R. T., Rubanova, Y., Bettencourt, J., and Duvenaud,                Fosgerau, K. and Hoffmann, T. Peptide therapeutics: current
+  D. K. Neural ordinary differential equations. Advances                   status and future directions. Drug discovery today, 20(1):
+  in neural information processing systems, 31, 2018.                      122–128, 2015.
+
+Cho, Y. and Kieffer, T. New aspects of an old drug: met-                 Frey, N. C., Berenberg, D., Zadorozhny, K., Kleinhenz, J.,
+  formin as a glucagon-like peptide 1 (glp-1) enhancer and                 Lafrance-Vanasse, J., Hotzel, I., Wu, Y., Ra, S., Bonneau,
+  sensitiser. Diabetologia, 54:219–222, 2011.                              R., Cho, K., et al. Protein discovery with discrete walk-
+                                                                           jump sampling. arXiv preprint arXiv:2306.12360, 2023.
+Craik, D. J., Fairlie, D. P., Liras, S., and Price, D. The future
+  of peptide-based drugs. Chemical biology & drug design,                Gao, Z., Tan, C., Chacón, P., and Li, S. Z. Pifold: To-
+  81(1):136–147, 2013.                                                     ward effective and efficient protein inverse folding. arXiv
+                                                                           preprint arXiv:2209.12643, 2022.
+Dagliyan, O., Proctor, E. A., D’Auria, K. M., Ding, F., and
+  Dokholyan, N. V. Structural and dynamic determinants                   Gruver, N., Stanton, S., Frey, N., Rudner, T. G., Hotzel, I.,
+  of protein-peptide recognition. Structure, 19(12):1837–                  Lafrance-Vanasse, J., Rajpal, A., Cho, K., and Wilson,
+ 1845, 2011.                                                               A. G. Protein design with guided discrete diffusion. Ad-
+                                                                           vances in Neural Information Processing Systems, 36,
+Dauparas, J., Anishchenko, I., Bennett, N., Bai, H., Ragotte,
+                                                                           2024.
+  R. J., Milles, L. F., Wicky, B. I., Courbet, A., de Haas,
+  R. J., Bethel, N., et al. Robust deep learning–based pro-              Han, X., Kumar, S., and Tsvetkov, Y. SSD-LM: Semi-
+  tein sequence design using proteinmpnn. Science, 378                     autoregressive simplex-based diffusion language model
+  (6615):49–56, 2022.                                                      for text generation and modular control. In Rogers, A.,
+Dauparas, J., Lee, G. R., Pecoraro, R., An, L., Anishchenko,               Boyd-Graber, J., and Okazaki, N. (eds.), Proceedings of
+  I., Glasscock, C., and Baker, D. Atomic context-                         the 61st Annual Meeting of the Association for Computa-
+  conditioned protein sequence design using ligandmpnn.                    tional Linguistics (Volume 1: Long Papers), pp. 11575–
+  Biorxiv, pp. 2023–12, 2023.                                             11596, Toronto, Canada, July 2023. Association for Com-
+                                                                           putational Linguistics. doi: 10.18653/v1/2023.acl-long.
+De Bortoli, V., Mathieu, E., Hutchinson, M., Thornton, J.,                 647. URL https://aclanthology.org/2023.
+  Teh, Y. W., and Doucet, A. Riemannian score-based                        acl-long.647.
+
+                                                                    10
+                                 Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+Henninot, A., Collins, J. C., and Nuss, J. M. The current                 Jantzen, R. T. Geodesics on the torus and other surfaces
+  state of peptide drug discovery: back to the future? Jour-                of revolution clarified using undergraduate physics tricks
+  nal of medicinal chemistry, 61(4):1382–1414, 2018.                        with bonus: nonrelativistic and relativistic kepler prob-
+                                                                            lems. arXiv preprint arXiv:1212.6206, 2012.
+Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-
+  bilistic models. Advances in neural information process-                Jiang, Y., Wang, R., Feng, J., Jin, J., Liang, S., Li, Z., Yu,
+  ing systems, 33:6840–6851, 2020.                                           Y., Ma, A., Su, R., Zou, Q., et al. Explainable deep hyper-
+                                                                             graph learning modeling the peptide secondary structure
+Hoogeboom, E., Nielsen, D., Jaini, P., Forré, P., and Welling,              prediction. Advanced Science, 10(11):2206151, 2023.
+  M. Argmax flows and multinomial diffusion: Learning
+                                                                          Jin, W., Wohlwend, J., Barzilay, R., and Jaakkola, T.
+  categorical distributions. Advances in Neural Information
+                                                                             Iterative refinement graph neural network for anti-
+  Processing Systems, 34:12454–12465, 2021.
+                                                                             body sequence-structure co-design. arXiv preprint
+Hoogeboom, E., Satorras, V. G., Vignac, C., and Welling, M.                  arXiv:2110.04624, 2021.
+  Equivariant diffusion for molecule generation in 3d. In                 Jing, B., Eismann, S., Suriana, P., Townshend, R. J., and
+  International conference on machine learning, pp. 8867–                    Dror, R. Learning from protein structure with geometric
+  8887. PMLR, 2022.                                                          vector perceptrons. arXiv preprint arXiv:2009.01411,
+                                                                             2020.
+Hsu, C., Verkuil, R., Liu, J., Lin, Z., Hie, B., Sercu, T., Lerer,
+  A., and Rives, A. Learning inverse folding from millions                Jing, B., Corso, G., Chang, J., Barzilay, R., and Jaakkola, T.
+  of predicted structures. In International Conference on                    Torsional diffusion for molecular conformer generation.
+  Machine Learning, pp. 8946–8970. PMLR, 2022.                               Advances in Neural Information Processing Systems, 35:
+                                                                             24240–24253, 2022.
+Huang, C.-W., Aghajohari, M., Bose, J., Panangaden, P.,
+  and Courville, A. C. Riemannian diffusion models. Ad-                   Jumper, J., Evans, R., Pritzel, A., Green, T., Figurnov, M.,
+  vances in Neural Information Processing Systems, 35:                      Ronneberger, O., Tunyasuvunakool, K., Bates, R., Žı́dek,
+  2750–2761, 2022.                                                          A., Potapenko, A., et al. Highly accurate protein structure
+                                                                            prediction with alphafold. Nature, 596(7873):583–589,
+Huang, P.-S., Boyken, S. E., and Baker, D. The coming                       2021.
+  of age of de novo protein design. Nature, 537(7620):                    Kabsch, W. A solution for the best rotation to relate two sets
+  320–327, 2016.                                                            of vectors. Acta Crystallographica Section A: Crystal
+                                                                            Physics, Diffraction, Theoretical and General Crystallog-
+Hummel, G., Reineke, U., and Reimer, U. Translating
+                                                                            raphy, 32(5):922–923, 1976.
+  peptides into small molecules. Molecular BioSystems, 2
+ (10):499–508, 2006.                                                      Kabsch, W. and Sander, C. Dictionary of protein secondary
+                                                                            structure: pattern recognition of hydrogen-bonded and
+Ingraham, J., Garg, V., Barzilay, R., and Jaakkola, T. Gener-               geometrical features. Biopolymers: Original Research
+  ative models for graph-based protein design. Advances                     on Biomolecules, 22(12):2577–2637, 1983.
+  in neural information processing systems, 32, 2019.
+                                                                          Kahn, M. Peptide secondary structure mimetics: recent
+Ingraham, J. B., Baranov, M., Costello, Z., Barber, K. W.,                  advances and future challenges. Synlett, 1993(11):821–
+  Wang, W., Ismail, A., Frappier, V., Lord, D. M., Ng-                      826, 1993.
+  Thow-Hing, C., Van Vlack, E. R., et al. Illuminating
+                                                                          Kaspar, A. A. and Reichert, J. M. Future directions for
+  protein space with a programmable generative model.
+                                                                            peptide therapeutics development. Drug discovery today,
+  Nature, pp. 1–9, 2023.
+                                                                           18(17-18):807–817, 2013.
+Jacobson, M. P., Friesner, R. A., Xiang, Z., and Honig, B.                Khan, A., Cowen-Rivers, A. I., Grosnit, A., Deik, D.-G.-
+  On the role of the crystal environment in determining                    X., Robert, P. A., Greiff, V., Smorodina, E., Rawat, P.,
+  protein side-chain conformations. Journal of molecular                    Dreczkowski, K., Akbar, R., et al. Antbo: Towards
+  biology, 320(3):597–608, 2002.                                            real-world automated antibody design with combinatorial
+                                                                            bayesian optimisation. arXiv preprint arXiv:2201.12570,
+Jain, M., Bengio, E., Hernandez-Garcia, A., Rector-Brooks,
+                                                                            2022.
+   J., Dossou, B. F., Ekbote, C. A., Fu, J., Zhang, T., Kil-
+   gour, M., Zhang, D., et al. Biological sequence design                 Kong, X., Huang, W., and Liu, Y. Conditional antibody
+   with gflownets. In International Conference on Machine                   design as 3d equivariant graph translation. arXiv preprint
+   Learning, pp. 9786–9801. PMLR, 2022.                                     arXiv:2208.06073, 2022.
+
+                                                                     11
+                               Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+Kong, X., Huang, W., and Liu, Y. End-to-end full-atom                London, N., Raveh, B., Cohen, E., Fathi, G., and Schueler-
+  antibody design. arXiv preprint arXiv:2302.00203, 2023.              Furman, O. Rosetta flexpepdock web server—high reso-
+                                                                       lution modeling of peptide–protein interactions. Nucleic
+Koudrina, A. and DeRosa, M. C. Advances in medical                     acids research, 39(suppl 2):W249–W253, 2011.
+  imaging: aptamer-and peptide-targeted mri and ct con-
+  trast agents. ACS omega, 5(36):22691–22701, 2020.                  Lu, C., Zhou, Y., Bao, F., Chen, J., Li, C., and Zhu, J.
+                                                                       Dpm-solver: A fast ode solver for diffusion probabilistic
+Krishna, R., Wang, J., Ahern, W., Sturmfels, P., Venkatesh,            model sampling in around 10 steps. Advances in Neural
+  P., Kalvet, I., Lee, G. R., Morey-Burrows, F. S., An-                Information Processing Systems, 35:5775–5787, 2022.
+  ishchenko, I., Humphreys, I. R., et al. Generalized
+  biomolecular modeling and design with rosettafold all-             Luo, S., Guan, J., Ma, J., and Peng, J. A 3d generative model
+  atom. bioRxiv, pp. 2023–10, 2023.                                    for structure-based drug design. Advances in Neural
+                                                                       Information Processing Systems, 34:6229–6239, 2021.
+Krivov, G. G., Shapovalov, M. V., and Dunbrack Jr, R. L.
+  Improved prediction of protein side-chain conformations            Luo, S., Su, Y., Peng, X., Wang, S., Peng, J., and Ma, J.
+  with scwrl4. Proteins: Structure, Function, and Bioinfor-            Antigen-specific antibody design and optimization with
+  matics, 77(4):778–795, 2009.                                         diffusion-based generative models for protein structures.
+                                                                       Advances in Neural Information Processing Systems, 35:
+Lam, K. S. Mini-review. application of combinatorial library           9754–9767, 2022.
+  methods in cancer research and drug discovery. Anti-
+                                                                     Madani, A., McCann, B., Naik, N., Keskar, N. S., Anand,
+  cancer drug design, 12(3):145–167, 1997.
+                                                                      N., Eguchi, R. R., Huang, P.-S., and Socher, R. Progen:
+Lee, J. M. Introduction to Riemannian manifolds, volume 2.            Language modeling for protein generation. arXiv preprint
+  Springer, 2018.                                                     arXiv:2004.03497, 2020.
+
+Leman, J. K., Weitzner, B. D., Lewis, S. M., Adolf-Bryfogle,         Manshour, N., He, F., Wang, D., and Xu, D. Integrating
+  J., Alam, N., Alford, R. F., Aprahamian, M., Baker, D.,             protein structure prediction and bayesian optimization
+  Barlow, K. A., Barth, P., et al. Macromolecular modeling            for peptide design. In NeurIPS 2023 Generative AI and
+  and design in rosetta: recent methods and frameworks.               Biology (GenBio) Workshop, 2023.
+  Nature methods, 17(7):665–680, 2020.                               Martinkus, K., Ludwiczak, J., Cho, K., Lian, W.-C.,
+                                                                      Lafrance-Vanasse, J., Hotzel, I., Rajpal, A., Wu, Y.,
+Li, J., Luo, S., Deng, C., Cheng, C., Guan, J., Guibas,
+                                                                      Bonneau, R., Gligorijevic, V., et al. Abdiffuser: Full-
+  L., Ma, J., and Peng, J. Orientation-aware graph neural
+                                                                      atom generation of in-vitro functioning antibodies. arXiv
+  networks for protein structure representation learning.
+                                                                      preprint arXiv:2308.05027, 2023.
+  2022.
+                                                                     McPartlon, M. and Xu, J. An end-to-end deep learn-
+Li, W. Geometry of probability simplex via optimal trans-
+                                                                      ing method for rotamer-free protein side-chain packing.
+  port. arXiv preprint arXiv:1803.06360, 2(4):13, 2018.
+                                                                      bioRxiv, pp. 2022–03, 2022.
+Lin, Z., Akin, H., Rao, R., Hie, B., Zhu, Z., Lu, W.,                Misiura, M., Shroff, R., Thyer, R., and Kolomeisky, A. B.
+  Smetanin, N., Verkuil, R., Kabeli, O., Shmueli, Y., et al.          Dlpacker: deep learning for prediction of amino acid
+  Evolutionary-scale prediction of atomic-level protein               side chain conformations in proteins. Proteins: Structure,
+  structure with a language model. Science, 379(6637):                Function, and Bioinformatics, 90(6):1278–1290, 2022.
+  1123–1130, 2023.
+                                                                     Muttenthaler, M., King, G. F., Adams, D. J., and Alewood,
+Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and                P. F. Trends in peptide drug discovery. Nature reviews
+  Le, M. Flow matching for generative modeling. arXiv                 Drug discovery, 20(4):309–325, 2021.
+  preprint arXiv:2210.02747, 2022.
+                                                                     Nijkamp, E., Ruffolo, J. A., Weinstein, E. N., Naik, N., and
+Lisanza, S. L., Gershon, J. M., Tipps, S. W. K., Arnoldt, L.,          Madani, A. Progen2: exploring the boundaries of protein
+  Hendel, S., Sims, J. N., Li, X., and Baker, D. Joint gener-          language models. Cell Systems, 14(11):968–978, 2023.
+  ation of protein sequence and structure with rosettafold
+  sequence space diffusion. bioRxiv, pp. 2023–05, 2023.              Nitin, N., LaConte, L., Zurkiya, O., Hu, X., and Bao, G.
+                                                                       Functionalization and peptide-based delivery of magnetic
+Liu, X., Gong, C., and Liu, Q. Flow straight and fast:                 nanoparticles as an intracellular mri contrast agent. JBIC
+  Learning to generate and transfer data with rectified flow.          Journal of Biological Inorganic Chemistry, 9:706–712,
+  arXiv preprint arXiv:2209.03003, 2022.                               2004.
+
+                                                                12
+                              Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+Peng, X., Luo, S., Guan, J., Xie, Q., Peng, J., and Ma, J.          Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Er-
+  Pocket2mol: Efficient molecular sampling based on 3d                mon, S., and Poole, B. Score-based generative modeling
+  protein pockets. In International Conference on Machine             through stochastic differential equations. arXiv preprint
+  Learning, pp. 17644–17655. PMLR, 2022.                              arXiv:2011.13456, 2020b.
+
+Petsalaki, E. and Russell, R. B. Peptide-mediated interac-          Song, Y., Gong, J., Xu, M., Cao, Z., Lan, Y., Ermon,
+  tions in biological systems: new discoveries and applica-           S., Zhou, H., and Ma, W.-Y. Equivariant flow match-
+  tions. Current opinion in biotechnology, 19(4):344–350,             ing with hybrid probability transport. arXiv preprint
+  2008.                                                               arXiv:2312.07168, 2023.
+
+Raveh, B., London, N., Zimmerman, L., and Schueler-                 Stanfield, R. L. and Wilson, I. A. Protein-peptide interac-
+  Furman, O. Rosetta flexpepdock ab-initio: simultaneous              tions. Current opinion in structural biology, 5(1):103–
+  folding, docking and refinement of peptides onto their              113, 1995.
+  receptors. PloS one, 6(4):e18934, 2011.
+                                                                    Stanton, S., Maddox, W., Gruver, N., Maffettone, P., De-
+Ren, Z., Li, J., Ding, F., Zhou, Y., Ma, J., and Peng, J.             laney, E., Greenside, P., and Wilson, A. G. Accelerating
+  Proximal exploration for model-guided protein sequence              bayesian optimization for biological sequence design with
+  design. In International Conference on Machine Learn-               denoising autoencoders. In International Conference on
+  ing, pp. 18520–18536. PMLR, 2022.                                   Machine Learning, pp. 20459–20478. PMLR, 2022.
+
+                                                                    Steinegger, M. and Söding, J. Mmseqs2 enables sensi-
+Richemond, P. H., Dieleman, S., and Doucet, A. Cat-
+                                                                      tive protein sequence searching for the analysis of mas-
+  egorical sdes with simplex diffusion. arXiv preprint
+                                                                      sive data sets. Nature biotechnology, 35(11):1026–1028,
+  arXiv:2210.14784, 2022.
+                                                                      2017.
+Roel-Touris, J., Nadal, M., and Marcos, E. Single-chain
+                                                                    Trippe, B. L., Yim, J., Tischer, D., Baker, D., Broderick, T.,
+  dimers from de novo immunoglobulins as robust scaffolds
+                                                                      Barzilay, R., and Jaakkola, T. Diffusion probabilistic mod-
+  for multiple binding loops. Nature Communications, 14
+                                                                      eling of protein backbones in 3d for the motif-scaffolding
+  (1):5939, 2023.
+                                                                      problem. arXiv preprint arXiv:2206.04119, 2022.
+Seebach, D., Hook, D. F., and Glättli, A. Helices and              Verkuil, R., Kabeli, O., Du, Y., Wicky, B. I., Milles, L. F.,
+  other secondary structures of β-and γ-peptides. Peptide             Dauparas, J., Baker, D., Ovchinnikov, S., Sercu, T., and
+  Science: Original Research on Biomolecules, 84(1):23–               Rives, A. Language models generalize beyond natural
+  37, 2006.                                                           proteins. bioRxiv, pp. 2022–12, 2022.
+Shapovalov, M. V. and Dunbrack, R. L. A smoothed                    Vincent, P. A connection between score matching and de-
+  backbone-dependent rotamer library for proteins derived             noising autoencoders. Neural computation, 23(7):1661–
+  from adaptive kernel density estimates and regressions.             1674, 2011.
+  Structure, 19(6):844–858, 2011.
+                                                                    Vlieghe, P., Lisowski, V., Martinez, J., and Khrestchatisky,
+Singh, H., Singh, S., and Singh Raghava, G. P. Peptide                M. Synthetic therapeutic peptides: science and market.
+  secondary structure prediction using evolutionary infor-            Drug discovery today, 15(1-2):40–56, 2010.
+  mation. BioRxiv, pp. 558791, 2019.
+                                                                    Wang, J., Lisanza, S., Juergens, D., Tischer, D., An-
+Skibicka, K. P. The central glp-1: implications for food and         ishchenko, I., Baek, M., Watson, J. L., Chun, J. H., Milles,
+  drug reward. Frontiers in neuroscience, 7:57784, 2013.             L. F., Dauparas, J., et al. Deep learning methods for de-
+                                                                     signing proteins scaffolding functional sites. BioRxiv, pp.
+Sohl-Dickstein, J., Weiss, E., Maheswaranathan, N., and              2021–11, 2021.
+  Ganguli, S. Deep unsupervised learning using nonequi-
+  librium thermodynamics. In International conference on            Wang, L., Wang, N., Zhang, W., Cheng, X., Yan, Z., Shao,
+  machine learning, pp. 2256–2265. PMLR, 2015.                       G., Wang, X., Wang, R., and Fu, C. Therapeutic pep-
+                                                                     tides: Current applications and future directions. Signal
+Song, J., Meng, C., and Ermon, S. Denoising diffusion im-            Transduction and Targeted Therapy, 7(1):48, 2022.
+  plicit models. arXiv preprint arXiv:2010.02502, 2020a.
+                                                                    Wang, W. and Carreira-Perpinán, M. A. Projection onto
+Song, Y. and Ermon, S. Generative modeling by estimating             the probability simplex: An efficient algorithm with
+  gradients of the data distribution. Advances in neural             a simple proof, and an application. arXiv preprint
+  information processing systems, 32, 2019.                          arXiv:1309.1541, 2013.
+
+                                                               13
+                               Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+Watson, J. L., Juergens, D., Bennett, N. R., Trippe, B. L.,           Zhang, S., Yang, X., Feng, Y., Qin, C., Chen, C.-C., Yu,
+ Yim, J., Eisenach, H. E., Ahern, W., Borst, A. J., Ragotte,            N., Chen, Z., Wang, H., Savarese, S., Ermon, S., et al.
+ R. J., Milles, L. F., et al. Broadly applicable and ac-                Hive: Harnessing human feedback for instructional visual
+ curate protein design by integrating structure prediction              editing. arXiv preprint arXiv:2303.09618, 2023a.
+ networks and diffusion generative models. BioRxiv, pp.
+ 2022–12, 2022.                                                       Zhang, Y. and Skolnick, J. Tm-align: a protein structure
+                                                                        alignment algorithm based on the tm-score. Nucleic acids
+Wei, H., Wang, W., Peng, Z., and Yang, J. Q-biolip: A                   research, 33(7):2302–2309, 2005.
+ comprehensive resource for quaternary structure-based
+ protein–ligand interactions. Genomics, Proteomics &                  Zhang, Y., Zhang, Z., Zhong, B., Misra, S., and Tang, J. Diff-
+ Bioinformatics, pp. qzae001, 2024.                                     pack: A torsional diffusion model for autoregressive pro-
+                                                                        tein side-chain packing. arXiv preprint arXiv:2306.01794,
+Wen, Z., He, J., Tao, H., and Huang, S.-Y. Pepbdb: a                    2023b.
+ comprehensive structural database of biological peptide–
+ protein interactions. Bioinformatics, 35(1):175–177,                 Zhang, Z., Lu, Z., Hao, Z., Zitnik, M., and Liu, Q. Full-
+ 2019.                                                                  atom protein pocket design via iterative refinement. arXiv
+                                                                        preprint arXiv:2310.02553, 2023c.
+Whisstock, J. C. and Lesk, A. M. Prediction of protein
+ function from protein sequence and structure. Quarterly
+ reviews of biophysics, 36(3):307–340, 2003.
+Wu, K. E., Yang, K. K., Berg, R. v. d., Zou, J. Y., Lu, A. X.,
+ and Amini, A. P. Protein structure generation via folding
+ diffusion. arXiv preprint arXiv:2209.15611, 2022.
+Xie, X., Valiente, P. A., and Kim, P. M. Helixgan a deep-
+  learning methodology for conditional de novo design of
+  α-helix structures. Bioinformatics, 39(1):btad036, 2023.
+Xu, M., Yu, L., Song, Y., Shi, C., Ermon, S., and Tang, J.
+  Geodiff: A geometric diffusion model for molecular con-
+  formation generation. arXiv preprint arXiv:2203.02923,
+  2022.
+Yeh, A. H.-W., Norn, C., Kipnis, Y., Tischer, D., Pellock,
+  S. J., Evans, D., Ma, P., Lee, G. R., Zhang, J. Z., An-
+  ishchenko, I., et al. De novo design of luciferases using
+  deep learning. Nature, 614(7949):774–780, 2023.
+Yi, K., Zhou, B., Shen, Y., Liò, P., and Wang, Y. Graph
+  denoising diffusion for inverse protein folding. Advances
+  in Neural Information Processing Systems, 36, 2024.
+Yim, J., Campbell, A., Foong, A. Y., Gastegger, M.,
+  Jiménez-Luna, J., Lewis, S., Satorras, V. G., Veeling,
+  B. S., Barzilay, R., Jaakkola, T., et al. Fast protein back-
+  bone generation with se (3) flow matching. arXiv preprint
+  arXiv:2310.05297, 2023a.
+Yim, J., Trippe, B. L., De Bortoli, V., Mathieu, E., Doucet,
+  A., Barzilay, R., and Jaakkola, T. Se (3) diffusion model
+  with application to protein backbone generation. arXiv
+  preprint arXiv:2302.02277, 2023b.
+Yim, J., Campbell, A., Mathieu, E., Foong, A. Y., Gastegger,
+  M., Jiménez-Luna, J., Lewis, S., Satorras, V. G., Veeling,
+  B. S., Noé, F., et al. Improved motif-scaffolding with
+  se (3) flow matching. arXiv preprint arXiv:2401.04082,
+  2024.
+
+                                                                 14
+                               Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+Code and data are available at https://github.com/Ced3-han/PepFlowww.
+
+A. PepFlow Implementations
+A.1. Manifold Explanations
+In this subsection, we further introduce some basic concepts of Riemannian manifolds as well as some important properties
+of the manifolds used by PepFlow. A Riemannian manifold ⟨M, g⟩ is a real, smooth
+                                                                              S    manifold M equipped with a positive-
+definite inner product g on the tangent space Tp M at each point p. Let T M = p∈M {p} × Tp M be the tangent bundle of
+the manifold, a time-dependent smooth vector field on M is a mapping ut : [0, 1] × M → T M where ut (p) ∈ Tp (M) for
+all p ∈ M.
+A geodesic is a locally distance-minimizing curve on the manifold. The existence and the uniqueness of the geodesic state
+that for any point p ∈ M and for any tangent vector u ∈ Tp (M), there exists a unique geodesic γ : [0, 1] → M such that
+γ(0) = p and γ ′ (0) = u. The exponential map expp : M × T M → M is uniquely defined to be expp (u) = γ(1). The
+logarithm map log : M × M → T M is defined as the inverse mapping of the exponential map such that expp (logp (q)) ≡
+q, ∀p, q ∈ M. The exponential map and logarithm map are central in terms of interpolation along the geodesic. As we have
+mentioned in the main text, the time-dependent flow can be compactly written as
+                                              ψt (p|p0 , p1 ) = expp0 (tlogp0 p1 )                                        (24)
+It can be verified that the above formula indeed follows the geodesic between p0 and p1 with linearly decreasing geodesic
+distances between the interpolated point pt and the target p1 . For general manifolds, closed-form formulae for the exponential
+and logarithm maps are generally not available. However, the manifolds encountered in this work have well-understood
+geometries which make it possible for efficient training and sampling using the exponential and logarithm maps.
+
+Euclidean manifold The tangent space of the Euclidean space Rd is also Rd , and the canonical inner product for n-
+dimensional vectors can be equipped to form a Riemannian manifold. The exponential map and logarithm map on the
+Euclidean manifold can be explicitly written as
+                                                      expx (y) = x + y                                                    (25)
+                                                      logx (u) = u − x                                                    (26)
+Intuitively, the geodesic between two points in the Euclidean space is exactly the line segment joining the two points,
+and interpolation at timestep t is given linearly by ψt (x|x0 , x1 ) = (1 − t)x0 + tx1 . This coincides with the common
+flow-matching loss for image generation, as already demonstrated in (Chen & Lipman, 2023).
+
+Rotation group SO(3) The 3D rotation group or the special orthogonal group SO(3) is a compact 3-dimensional Lie
+group whose differential is a skew-symmetric matrix in the tangent space so(3). The canonical choice of the inner product
+on the tangent space is the half of the induced Frobenius inner product:
+                                                  1            1
+                                  ⟨A, B⟩SO(3) = ⟨A, B⟩F = tr(A⊤ B), ∀A, B ∈ so(3)                                    (27)
+                                                  2            2
+This equips SO(3) with a Riemannian structure. The SO(3) manifold has a constant Gaussian curvature everywhere
+and is diffeomorphic to a solid ball with antipolar points identified. The exponential map (from the identity rotation I)
+exp : so(3) → SO(3) can be realized as the standard matrix exponentiation:
+                                                                ∞
+                                                                X Ak
+                                         exp(A) = exp(A) =                 , ∀A ∈ so(3)                                   (28)
+                                                                      k!
+                                                                k=0
+
+Rodrigues’ rotation formula gives an equivalent but more compact form of the exponential map as
+                                                 sin θ    1 − cos θ 2
+                                    exp(A) = I +       A+           A , ∀A ∈ so(3)                                 (29)
+                                                   θ          θ2
+where θ = ∥A∥SO(3) = 21 ∥A∥F represents the rotation angle. Similarly, the logarithm map (from the identity rotation I)
+log : SO(3) → so(3) can be defined as the matrix logarithm as
+                                                              ∞
+                                                              X               (R − I)k
+                                         log(R) = log R =           (−1)k+1                                               (30)
+                                                                                 k
+                                                              k=1
+
+                                                              15
+                               Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+or more compactly via
+                                                         θ
+                                                log(R) =     A, ∀R ∈ SO(3)                                           (31)
+                                                       sin θ
+where A = (R − R⊤ )/2 ∈ so(3) and θ = ∥A∥SO(3) represents the rotation angle. Utilizing the sphere geometry, the
+geodesic distance between two rotations can be determined as d(R1 , R2 ) = ∥log(R1⊤ R2 )∥F , and the interpolation can be
+calculated as exp(tA).
+
+Special Euclidean group SE(3) The special Euclidean group SE(3) comprises of all rigid transformations of rotation
+and translation. It can be understood as the semidirect product of SO(3) and a translation vector in R3
+
+                                                    SE(3) = SO(3) ⋉ R3                                                     (32)
+
+In practice, the interpolated rotation Rt and translation xt at timestep t are fed into a common encoder. Different predictor
+heads are then applied to the hidden representation to predict the rotation and translation vector field. In this way, each head
+can leverage the information from both the rotation and translation to learn the joint distribution over SE(3).
+
+Toric manifold A flat torus in n dimensions is characterized by a metric inherited from its representation as the quotient,
+Rn /L, where L denotes a discrete subgroup of Rn that is isomorphic to Zn . The tangent space of the torus corresponds to
+the Euclidean Space Rn . In our study of torsional flow matching, L represents the cartesian product of 2πZ (Jantzen, 2012).
+Since the flat torus inherits its metric from the quotient manifold, the exponential and logarithm maps can be understood as
+corresponding to their Euclidean counterparts with modulo of 2π. In Eq.33, the logarithm map is represented as an array of
+angles that indicate the direction of the geodesic.
+
+                                         expa (u) = (a + u)%(2π)                                                           (33)
+                                          loga (b) = atan2(sin(b − a), cos(b − a))                                         (34)
+
+Then we can derive the simplified vector field on the toric manifold, by definition, the atan2 function returns an angle in
+(−π, π], and we can rewrite the logarithm map, which is locally and linearly connecting the displacement vectors:
+
+                                                wrap(u) = (u + π)%(2π) − π                                                 (35)
+                                                 loga (b) = wrap(b − a)                                                    (36)
+
+Then the interpolation can be written as a locally straight line in the embedded Euclidean space connecting the starting point
+and end point:
+                                ψt = expχj (t logχj χj1 ) = (χj0 + twrap(χj1 − χj0 ))%(2π)                                (37)
+                                            0        0
+
+Taking the derivative concerning t, we obtain the vector field as:
+                                                                                           !
+                                          ∂ψt                                  χj1 − χjt
+                                     ut =     = wrap(χj1 − χj0 ) = wrap                                                    (38)
+                                           ∂t                                    1−t
+
+Simplex manifold A (d − 1)-simplex ∆d−1 can be used to represent the collect of all d-class categorical distributions
+such that ∆d−1 = {p ∈ Rd , ∥p∥1 = 1, 0 ≤ pk ≤ 1, 1 ≤ k ≤ d}. In this way, each point p ∈ ∆d−1 is a d-class categorical
+distribution on which a flow can be defined. Different from the common Euclidean setting, a simplex manifold is a bounded
+manifold. If we construct a flow directly on the simplex, we may encounter the problems of Points moving outside the
+boundaries. Note that the vector field on the boundary points outside the simplex. Point moving  Paway from the manifold.
+                                                                                                  n
+Though this can be prevented by projecting the predicted vector fields onto the tangent space {u| k=1 uk = 0}. Therefore,
+even though directly working on the simplex has the advantage of being simpler to implement, we chose to work on the logit
+space which is well-defined over Rn for unconstraint flow matching. There is, however, one disadvantage of the projective
+structure of the logit space. In other words, the mapping between the simplex and the logit space is not one-to-one, as an
+equivariant class of a categorical distribution can be identified with s1 ∼ s1 ⇔ ∃C ∈ R s.t. s1,k = s2,k + C, 1 ≤ k ≤ n.
+We addressed this problem by essentially setting the logit of the last class to 0.
+We follow (Han et al., 2023) to assume the logit-normal distribution of the categorical distribution of the amino acid types.
+In other words, we assume that the logits sk = log(pk /pd ), 1 ≤ k ≤ d − 1 follow some normal distribution in Rd . Such a
+
+                                                              16
+                               Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+transform provides a diffeomorphism from the interior of the simplex (∆d−1 )◦ to Rd−1 in which the standard Euclidean
+flow matching can be applied. It can be demonstrated that such a transform assigns the last class d with a logit of 0. As the
+boundary of the simplex is excluded in such a logit transformation, we instead use soft one-hot encoding by assigning the
+ground truth class with a const logit value of 2K > 0 and other logits with 0 to be consistent with the last class d. Note that
+after applying the softmax function, a logit vector represents the same categorical distribution when adding a constant value
+to all of the logits. Therefore, such an assignment of the logit values coincides with our definition in Eq.(15). Similarly, if
+the last class d is the ground truth class, other logits are set to −2K such that the softmax probabilities remain the same.
+In this way, the categorical flow matching loss will be symmetric for all classes. The common Euclidean exponential and
+logarithm map and linear interpolation are applied on Rd−1 for learning the vector field. The final amino acid types are
+sampled from the last categorical distribution. For all cases, we empirically set K = 5.
+
+A.2. Reparameterized CFM objectives
+The Riemannian flow matching paper used the formulation of the object of the conditional vector field as
+
+                                     L(θ) = Et,p1 (x1 ),p0 (x0 ) ∥vθ (xt , t) − ut (xt |x1 , x0 )∥2g                        (39)
+
+where the time-dependent model vθ directly learns the vector field at timestep t. Following the techniques used in various
+diffusion models, we can instead predict the target data at timestep t = 1 and reparameterize the objective as
+
+                                  L(θ) = Et,p1 (x1 ),p0 (x0 ) ∥ut (xt |x̂1 , x0 ) − ut (xt |x1 , x0 )∥2g                    (40)
+
+where x̂1 = vθ (xt , t). In this formulation, the vector field between the reconstructed data x̂1 and the noise x0 are calculated
+and compared to the ground truth vector field. Specifically, for flowing matching on Euclidean manifolds, we have
+ut (xt |x1 , x0 ) = x1 − x0 , and
+
+                     Lpos = Et,p1 (x1 ),p0 (x0 ) ∥(x̂1 − x0 ) − (x1 − x0 )∥22 = Et,p1 (x1 ),p0 (x0 ) ∥x̂1 − x1 ∥22          (41)
+
+which coincides with the mean squared error loss. Similarly, the reparameterized loss of the orientation, dihedral angles, and
+sequence can be formulated as
+                                                                                         2
+                            Lori = Et,p1 (R1 ),p0 (R0 ) logR̂t R̂1 − logRt R1 /(1 − t)                                    (42)
+                                                                                                       SO(3)
+                                                                               2
+                              Lang = Et,p1 (χ1 ),p0 (χ0 ) ∥(χ̂1 − χ1 )%2π∥2                                                 (43)
+                                                                     2
+                             Ltype = Et,p1 (s1 ),p0 (s0 ) ∥ŝ1 − s1 ∥2                                                      (44)
+
+Empirically, such parameterization makes the model more numerically stable while t is close to 1 during sampling. Auxiliary
+losses based on the ground truth data are also feasible to calculate based on the reconstruction, as we will describe in detail
+                                                                                                               pep
+in Appendix A.5. During training, we take the ground truth peptide state C pep and predicted peptide state C to calculate
+vector fields and CFM losses; during sampling, we take vector fields which start from the prior peptide state C pep t−1 to the
+                                                                                                                       N
+                                  pep
+current predicted peptide state C Nt for updating the prior state to the next state C pep
+                                                                                       t .
+                                                                                              N
+
+We would also like to mention that since different amino acids have varying numbers of side-chain angles, directly calculating
+torsion loss based on the real amino acid sequence might lead to potential data leakage. This situation could cause the
+sequence modality to rely on the number of torsions to predict amino acid types instead of learning the underlying biological
+connections. Therefore, during training, we pragmatically use the predicted amino acid sequence to guide the computation
+of torsion loss concerning side-chains. For instance, for the j-th amino acid, if its true type is LEU but it is predicted as
+ARG, we use the four side-chain angles of ARG to calculate the angle-related loss, rather than employing the two side-chain
+angles of LEU. This approach compels the model to treat the two extra side-chain angles from the real type as the default
+value of 0. In the generation phase, we directly reconstruct side-chain atomic coordinates based on the predicted amino acid
+type, using the corresponding number of the side-chain angles and the side-chain atomic composition.
+
+A.3. Geometric Symmetries
+We model the position xj and orientation Rj of each residue as a point in the Riemannian manifolds R3 and SO(3) such that
+the frame Tj = (xj , Rj ) lies on the Riemannian manifold SE(3). When extending to the whole peptide with n residues, the
+
+                                                                   17
+                               Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+set of n frames should lie on a subspace of the Cartesian product of n manifolds, SE(3)n with a well-defined SE(3)-invariant
+metric. To achieve that, we translate the entire protein-peptide complex by subtracting the mean positions of the n residues
+in the peptide. This ensures that the n positions of the peptide are in the zero center of mass subspace in Euclidean Space
+and renders the distribution of the generated peptide frames SE(3)-invariant. The defined flows are also SE(3)-invariant,
+and the vector fields for positions and orientations are SE(3)-equivariant by the use of an equivariant IPA decoder (see
+Appendix A.4). For the modeling of torsion angles, side chain angles of some residues are π-rotation-symmetric, which
+means χ ∈ S1 and the alternative χ + π ∈ S1 will result in the same physical structures. We determine the symmetry of the
+j-th residue by the predicted residue type aj , followed by evaluating the toric CFM objectives for both the predicted angles
+and the alternative angles. The minimum values are then used to optimize our networks.
+
+A.4. Network Details
+In this subsection, we describe the network architecture of the target protein encoder and the flow-based decoder in detail.
+
+Encoder The encoder takes the 3D structural information of the target protein and output node embeddings and node-pair
+embeddings. For the node (residue) embeddings, we use a mixture of the following features:
+
+   • Residue type. A learnable embedding is applied.
+
+   • Atom coordinates. This includes both the backbone and the side-chain atoms.
+
+   • Backbone dihedrals. Sinusoidal embeddings are applied.
+
+   • Side-chain angles. Sinusoidal embeddings are applied.
+
+These features are encoded using different multi-layer perceptions (MLPs). The concatenated features are transformed by
+another MLP to form the final node embedding. For the edge (residue-pair) embeddings, we use a mixture of the following
+features:
+
+   • Residue-type pair. A learnable embedding of 20 × 20 entries is applied.
+
+   • Relative sequential positions. A learnable embedding of the relative position of the two residues is applied.
+
+   • Distance between two residues.
+
+   • Relative orientation between two residues. Inter-residue backbone dihedral angles are calculated to represent the
+     relative orientation and sinusoidal embeddings are applied.
+
+Similarly, these features are encoded using different MLPs and are concatenated features and transformed by another MLP
+to form the final edge embedding. The encoder is SE(3)-invariant, meaning that its output will be the same regardless of any
+global rigid transformation. Here we set the hidden dimension of residue embedding as 128, and the hidden dimension of
+pair embedding hidden dimension as 64.
+
+Decoder The flow-based decoder takes the node embeddings and edge embeddings of the receptor proteins, the current
+interpolated peptide descriptors, and the timestep t. It tries to recover the ground truth peptide descriptors at timestep t = 1
+as we are using the reparameterized CFM objectives (see Appendix A.2). The overall architecture is based on the Invariant
+Point Attention (IPA) (Jumper et al., 2021) which takes the above features and backbone frames as input and applies an
+invariant attention mechanism to capture the interactions between the receptor protein and the current peptide backbone.
+Additional MLP encoders for the timestep embedding, the residue sequence embeddings, and the dihedral angle embeddings
+are applied and fused into the IPA output. Separate MLP decoders then try to recover the ground truth descriptors based
+on the fused information. Note that some residue types may be inferred from the number of residual dihedral angles. To
+prevent data leakage, we carefully mask out this information for the prediction of the residue types. Here we set the hidden
+dimension of residue embedding as 128, and the hidden dimension of pair embedding hidden dimension as 64, and we use 6
+blocks of IPA.
+
+                                                              18
+                                Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+A.5. Auxiliary Losses
+The reparameterized flow matching objectives (Appendix A.2) make it possible to enforce additional auxiliary loss on the
+predicted target data at t = 1. Specifically, the backbone reconstruction loss Lbb is proposed to align the prediction with the
+ground truth backbone:
+                                                   X                                   2
+                                            Ljbb =      (R̂1j x0,kbb + x̂j1 ) − x1,kbb                                     (45)
+                                                                                           2
+                                                    kbb
+
+where R̂1j and x̂j1 are predictions from the model and x0,kbb , x1,kbb are the initial backbone atoms coordinates and the ground
+truth backbone atom coordinates. The backbone reconstruction loss further helps the model to learn the translation and
+orientation of each residue.
+The torsion angles lie on the flat toric manifold, so it is also feasible to enforce a torsion reconstruction loss as
+                                                        X                              2
+                                              Ljtor =         (χ̂jk,1 − χjk,1 )%(2π)                                          (46)
+                                                                                       2
+                                                          k
+
+
+where χ̂jk,1 is the prediction from the model and χjk,1 is the ground truth torsion angle. The modulo inside the norm makes
+sure that the error is in [−π, π].
+
+A.6. Training
+We employ three types of models: PepFlow w/Bb, exclusively trained to model the distribution of the peptide backbone;
+PepFlow w/Bb+Seq, trained to model the joint distribution of backbone and sequence; and PepFlow w/Bb+Seq+Ang, the
+full-atom version modeling trained on all four modalities of peptide structure and sequence. Despite sharing the same network
+architecture, each model has a modified training loss. For instance, PepFlow w/Bb includes only position CFM, orientation,
+and backbone losses, PepFlow w/Bb includes position, orientation, and backbone losses, PepFlow w/Bb+Seq+Ang includes
+all CFM losses, backbone losses, and torsion losses. We set λpos = 0.5, λori = 0.5, λang = 1.0, λtype = 1.0, λaux = 0.25.
+All three models are trained on 8 NVIDIA A100 GPUs using a DDP distributed training scheme for 40k iterations. We set
+the learning rate at 5 × 10−4 and the batch size at 32 for each distributed node. To prevent potential gradient clipping issues
+that may occur during IPA updating, we apply gradient clipping when using the Adam optimizer.
+
+A.7. Sampling
+We execute the sampling process of our model on a single NVIDIA A100, employing 200 equal-spaced timesteps for the
+Euler step update and simultaneously sampling 64 peptides for each test case. This parallel sampling strategy significantly
+boosts efficiency, allowing us to generate multiple peptides concurrently.
+For scenarios involving partial sampling such as in fix-backbone sequence design, we initialize the prior state with the native
+peptide backbone structure. During each iteration, we exclusively update the sequence modality while keeping the backbone
+structure fixed. This approach ensures a focused exploration of the desired modality.
+
+B. Experimental Details
+B.1. Dataset Statistics
+Our dataset is derived from PpeBDB (Wen et al., 2019) and QBiolLip (Wei et al., 2024). We combine the structures of
+protein-peptide complexes from these sources and eliminate the duplicate PDBs. Further refinement involves excluding
+structures with a resolution less than 4Å, peptides that are too long (exceeding 25 residues) or too short (less than 3 residues),
+and targets with a length not twice as long as that of the peptide. After applying these filters, we reach a set of 10, 384
+structures. We then employ clustering based on 40% peptide sequence identity using mmseqs2 (Steinegger & Söding, 2017).
+This results in 1, 557 clusters. Due to the presence of numerous orphan peptide clusters, we remove clusters with fewer
+than 5 items, resulting in a final dataset with 292 clusters containing 8, 365 complex structures. For efficient and unbiased
+evaluation, we randomly select 10 groups from clusters with item numbers ranging from 10 to 50 to create our test set of
+158 structures. The remainder of the dataset is allocated for training and validation. Note that for the input of generative
+models, we derive the binding pocket of the peptide in each complex. The binding pocket is defined as the residues in the
+
+                                                                  19
+                                Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+
+
+
+                                     Figure 5. Length distribution of the peptide in our dataset.
+
+
+target protein which has heavy atoms lying in the 10Åradius of any heavy atom in the peptide. The length distribution of
+peptides is presented in Figure 5.
+
+B.2. Methods Details
+B.2.1. S EQUENCE -S TRUCTURE C O -D ESIGN
+We remove the peptide in each protein-peptide complex, and the model takes the full-atom target protein structure as input,
+trying to recover both the sequence and the structure of the corresponding peptide. We generate 64 peptides for each protein
+target for every evaluated model. All methods are evaluated on a single NVIDIA A100. Note that the length of the generated
+peptide is predefined to be the length of each native peptide.
+
+PepFlow We evaluate all three types of our models. PepFlow w/Bb is used for sampling peptide backbones, and sequences
+are designed by ProteinMPNN (Dauparas et al., 2022) (1 sequence for each peptide). PepFlow w/Bb+Seq jointly generates
+backbones and sequences, and PepFlow w/Bb+Seq+Ang is the full-atom version, which designs backbones, sequences, and
+side-chains.
+
+RFDiffusion RFDiffusion (Watson et al., 2022) utilizes pre-trained weights from RoseTTAFold and undergoes training
+for generating protein backbone structures through the denoising diffusion process. For designing peptide binders, we
+employ the official implementation of RFDiffusion. Specifically, we apply 200 discrete timesteps for the diffusion process,
+resulting in the generation of 64 peptides for each target protein. It is important to note that, for the sake of fair comparison,
+we do not consider the addition of hotspot residues on the target protein during the generation process. Subsequently, the
+sequences of the generated peptide backbone structures are predicted using ProteinMPNN (Dauparas et al., 2022).
+
+ProteinGenerator ProteinGenerator (Lisanza et al., 2023) represents an updated version of RFDiffusion, capable of
+concurrently generating protein backbone structures and their corresponding sequences. We utilize the official inference
+scripts, employing 200 diffusion timesteps to design 64 peptides for each target protein. Notably, for a fair comparison, we
+refrain from incorporating additional hotspot and DSSP information during the generation process.
+
+Diffusion We also evaluated a diffusion-based peptide generative model that was trained from scratch using the same
+settings as our models and possesses similar architectures to the diffab model (Luo et al., 2022).
+
+B.2.2. F IX -BACKBONE S EQUENCE D ESIGN
+We mask the sequence of the peptide in each protein-peptide complex, and models should predict the sequence based on the
+peptide backbone structure with a full-atom protein target structure and sequence information. We sample 64 sequences for
+
+                                                                 20
+                              Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+each peptide using the evaluated methods and report the average of the metrics over all the test peptides. All methods are
+evaluated on a single NVIDIA A100.
+
+PepFlow We evaluate both PepFlow w/Bb+Seq and PepFlow w/Bb+Seq+Ang. Both methods take the peptide backbone
+with the target protein as input, but PepFlow w/Bb+Seq can only sample sequences, while PepFlow w/Bb+Seq+Ang
+samples both the sequence and the side-chain angles. We do not include PepFlow w/Bb as it can only be used for generating
+peptide backbones.
+
+ProteinMPNN ProteinMPNN is a Graph Neural Network (GNN) based fix-backbone design model (Dauparas et al.,
+2022), capable of iteratively predicting protein sequences based on the provided backbone structure. A notable feature of
+ProteinMPNN is its ability to selectively design specific chains within the complex. When performing Sequence-Structure
+Co-Design, we utilize the official multi-chain design scripts, setting the sampling temperature to 0.1. In this context,
+ProteinMPNN is employed to generate sequences for both RFDiffusion and our PepFlow w/Bb (10 sequences for each
+peptide, but we only select the one with the highest score). Additionally, during fix-backbone design, ProteinMPNN is
+utilized to design 64 peptide sequences for each complex structure.
+
+ESM-IF ESM-IF is a fix-backbone design model (Hsu et al., 2022) trained on the CATH dataset and AlphaFold-predicted
+UniRef 50 structures. For evaluation, we utilize the ESM-IF multi-chain design method to generate 64 sequences for each
+complex.
+
+B.2.3. S IDE - CHAIN PACKING
+We remove the side-chain atoms of the peptide in each protein-peptide complex, and models should predict the side-chain
+angles of each residue in the peptide. We make predictions 64 times for each peptide and report the average of the metrics
+over all the test peptides.
+
+PepFlow As side-chain packing requires the modeling of side-chain angles, we only evaluate our PepFlow Bb+Seq+Ang
+by fixing the backbone and sequence to the ground truth and partially sampling for side-chain angles.
+
+RosettaPacker We employ the PackRotamersMover in PyRosetta (Chaudhury et al., 2010), utilizing the Rosetta energy
+function (Alford et al., 2017) and a rotamer library (Shapovalov & Dunbrack, 2011). In each test case, we perform packing
+iterations 64 times, ensuring a thorough exploration of side-chain conformations.
+
+SCWRL4 SCWRL4 (Krivov et al., 2009) stands as a widely adopted side-chain packing method, leveraging a backbone-
+dependent rotamer library within a statistical energy function. For Side-chain Packing evaluation, we download and compile
+the official program, utilizing it to reconstruct 64 full-atom structures.
+
+DLPacker DLPacker is a 3D CNN-based model designed for predicting residue side-chain conformations (Misiura et al.,
+2022). To reconstruct the side-chains of the peptide, we utilize the official implementation along with the model weights.
+For each peptide, we perform side-chain packing by generating 64 structures.
+
+AttnPacker AttnPacker incorporates backbone 3D geometry to simultaneously compute all side-chain coordinates using
+equivariant attention mechanism (McPartlon & Xu, 2022). We adapt the pretrained weights from the official implementation
+and generate 64 structures for each complex.
+
+DiffPack DiffPack is a diffusion-based generative model which autoregressive pack side-chain angles using diffusion
+process on toric manifold (Zhang et al., 2023b). We adapt the pretrained weights from the official implementation and
+generate 64 structures for each complex.
+
+B.3. Metric Details
+B.3.1. S EQUENCE -S TRUCTURE C O -D ESIGN
+AAR AAR, or Amino Acid Recovery, quantifies the sequence identity between the generated peptide and the native
+peptide. This metric is computed by evaluating the overlapping ratio of the generated sequence with the native sequence.
+
+                                                           21
+                               Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+A higher AAR indicates a closer match between the generated and native peptides in terms of amino acid composition,
+reflecting the accuracy of the generated sequence.
+
+RMSD The Root-Mean-Square Deviation (RMSD) is a standard metric used to compare two protein structures. In our
+evaluation, the generated peptide within the complex is aligned to the native peptide using the Kabsch Algorithm (Kabsch,
+1976). It is important to note that only the peptide structure in the complex is considered for superposition. Subsequently,
+we calculate the normalized Cα distances between the generated and original peptide, yielding the RMSD value. A lower
+RMSD indicates a closer structural alignment between the generated and native peptides.
+
+SSR As single-chain proteins, peptides cannot form higher-level structures such as tertiary and quaternary structures; they
+can only form secondary structures and interact with their receptors through specific motifs (Kahn, 1993; Eirı́ksdóttir et al.,
+2010; Seebach et al., 2006). Secondary Structure Ratio (SSR) assesses the similarity between the secondary structure of the
+generated peptide and the ground-truth peptide. This metric is computed by determining the ratio of identical entries in
+the secondary structure labels of the two peptides. The secondary structure labels are obtained using the DSSP software
+(Kabsch & Sander, 1983). A higher SSR indicates a closer match in the secondary structure between the generated and
+native peptides. The use of DSSP for evaluating secondary structures is inspired by prior works (Singh et al., 2019; Jiang
+et al., 2023), where DSSP outputs are treated as ground truth labels of secondary structures. We will provide additional
+explanations about this metric.
+
+BSR Binding Site Rates (BSR) gauge the interaction similarity between the generated peptide-protein pair and the native
+peptide-protein pair. Essentially, BSR assesses whether the generated peptide can recognize residues in the target protein
+similarly to the native peptide, which may imply similar biological functions. We define a residue in the binding site if its
+Cβ atom is within a 6Åradius of any residue in the peptide. BSR is then calculated as the overlapping ratio of the derived
+binding sites in the generated and native peptides. A higher BSR indicates a closer match in the binding interactions between
+the generated and native peptide-protein pairs.
+
+STAB STAB, or Stability Ratio, is defined as the proportion of designed peptides that exhibit a lower energy score
+compared to the native complex. The stability of the protein-peptide complex is inversely related to its energy level, as a
+lower energy score signifies higher stability. Utilizing the FastRelax method in PyRosetta (Chaudhury et al., 2010), each
+complex first undergoes relaxation, and the total score is evaluated using the REF2015 score function. The STAB metric is
+then determined by calculating the ratio of complexes with the reduced energy scores, highlighting the designed peptides
+that contribute to the enhanced stability in the protein-peptide complex.
+
+BIND BIND represents the percentage of designed peptides exhibiting lower binding energy, indicating a higher binding
+affinity to the target protein compared to the native peptide. Higher binding affinities are often associated with improved
+peptide functions. The binding energy is computed using the InterfaceAnalyzerMover in PyRosetta (Chaudhury et al., 2010),
+after relaxing the complex and defining the interface between the peptide and target protein. A higher BIND percentage
+implies that the designed peptides possess enhanced binding affinities, suggesting potential improvements in their functional
+capabilities.
+
+Designability Designability assesses whether a generated peptide structure corresponds to a sequence that can fold into
+a structure similar to itself. This property is crucial in wet lab experiments where synthesized peptide sequences can be
+evaluated. We compared the predicted structures from folding models of designed sequences with their native structures. In
+addition to existing metrics, we have incorporated this assessment to further gauge the performance of different fix-backbone
+design models. Specifically, we utilized ESMFold to predict the structure of the peptide sequence and subsequently employ
+Rosetta FlexPep Dock (London et al., 2011; Raveh et al., 2011) to dock the predicted structure into the target. The resulting
+docked structure was then compared with the native peptide structure. We quantified the fraction of generated peptides that
+exhibit less than 2 Å RMSD to the native structure as the designability metric.
+
+Diversity Diversity is quantified by calculating all the pair-wise TM-scores among the generated peptides for a given target
+using the original TM-align program (Zhang & Skolnick, 2005). TM-scores represent the structural similarities between
+peptides. The diversity metric is then defined as 1 minus the average TM-score. A higher diversity value indicates greater
+structural variation among the generated peptides, showcasing the extent of structural exploration in the design process.
+
+                                                              22
+                               Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+B.3.2. F IX -BACKBONE S EQUENCE D ESIGN
+Likeness Likeness assesses the similarity between the generated sequences and the natural protein sequences. Utilizing
+a pre-trained protein language model, ProtGPT2 (Ferruz et al., 2022), each sequence is scored based on the negative log-
+likelihood. The negative log-likelihood is inversely proportional to the similarity to the natural protein sequence distribution:
+the lower the negative log-likelihood, the more akin the generated sequence is to the natural protein sequence distribution.
+This metric offers insights into the fidelity of the generated sequences to the natural protein sequence characteristics.
+
+Diversity Diversity is evaluated using the Hamming Distance, which assesses the string distance between two sequences.
+To quantify diversity among the generated sequences for a given complex, we calculate all the pair-wise Hamming Distances
+and average them. A higher diversity value indicates a greater dissimilarity among the generated sequences, providing
+insights into the variety present within the designed peptide set for the target complex.
+
+Designbility We compared the predicted structures from folding models of designed sequences with their native structures.
+In addition to existing metrics, we have incorporated this assessment to further gauge the performance of different fix-
+backbone design models. Specifically, we utilized ESMFold to predict the structure of the peptide sequence and subsequently
+employ Rosetta FlexPep Dock to dock the predicted structure into the target. The resulting docked structure was then
+compared with the native peptide structure. We quantified the fraction of generated peptides that exhibit less than 2 RMSD
+to the native structure as the designability metric.
+
+B.3.3. S IDE - CHAIN PACKING
+MSE We use the Mean Squared Error (MSE) to check how well the predicted side-chain angles match the actual values.
+Since different residues have different numbers of side-chain angles, we calculate MSE separately for each of the four
+side-chain angles. This helps us understand how accurately the model predicts the angles for different parts of the peptide.
+
+Correct Given the flexibility of side-chain angles in space, relying solely on absolute error may not provide a complete
+picture of the performance of the model. To address this, we define a predicted angle as correct if it falls within a 20◦
+deviation from its ground truth (Zhang et al., 2023b). The metric calculates the proportion of correctly predicted angles for
+all four side-chain angles, offering a more lenient measure that accounts for the inherent flexibility in the angles.
+
+B.4. Additional Results
+B.4.1. S EQUENCE -S TRUCTURE C O -D ESIGN
+We present the RMSD of the generated peptides for the evaluated methods in Figure 6. We observe that diffusion-based
+baselines exhibit more variance than our ODE-based method, and all methods perform better in shorter peptide generation
+than the longer ones.
+We also observe a strong correlation between sequence dissimilarity (1-AAR) and RMSD in Figure 7, with a Pearson
+correlation coefficient of 0.63. This underscores the robust consistency between sequence and structure in peptide generation.
+
+                                  Table 4. Additional Results of Sequence-Structure Co-Design
+                                                                 C-RMSD Å ↓       TM-Score
+                                  RFdiffusion                        29.02            0.31
+                                  ProteinGenerator                   30.88            0.33
+                                  PepFlow w/Bb                       6.16             0.37
+                                  PepFlow w/Bb+Seq                   6.13             0.38
+                                  PepFlow w/Bb+Seq+Ang               5.59             0.42
+
+Note that the RMSDs reported in our main text and figures are calculated by aligning the generated peptide structures solely
+to the native peptide. However, given the relatively low Binding Site Ratio (BSR) observed in baseline models, indicating
+inaccurately placed peptides, we also present the Cα RMSDs by aligning the entire complex (Complex-RMSD (Watson
+et al., 2022)), as shown in Table 4. Baseline models exhibit subpar performance, suggesting their ability to design peptides
+but struggle to position them accurately at binding sites. In contrast, our models demonstrate proficiency in generating
+
+                                                              23
+                               Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+
+
+
+                                Figure 6. RMSD vs Length in sequence-structure co-design tasks.
+
+
+
+
+Figure 7. Correlation between 1-AAR and RMSD of PepFlow generated peptides, Pearson r is 0.63. (1-AAR is between 0 and 1).
+
+
+
+
+                                                              24
+                               Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+native-like peptides positioned at similar binding sites to the native peptide, particularly when incorporating side-chain
+modeling. Additionally, we include the average TM-Score between generated peptide structures, revealing that baselines
+tend to design more diverse structures, while ours lean towards generating more similar structures. This indicates a trade-off
+between structure diversities and similarities to the native structure.
+
+B.4.2. S IDE - CHAIN PACKING
+
+                                     Table 5. Mean absolute error of different types of residues.
+  Type   χ    SCWRL4       Rosetta     DLPacker      PepFlow          Type     χ    SCWRL4          Rosetta   DLPacker   PepFlow
+  LEU     1     16.87       26.22        25.67         30.82          ARG      1      35.50          51.48     34.67      40.80
+          2     24.84       41.55        42.51         31.50                   2      43.07          41.25     39.48      30.59
+                                                                               3      61.28          54.22     48.77      32.54
+  LYS     1     45.31       50.43        54.45         51.40
+                                                                               4      59.14          71.71     65.48      40.16
+          2     34.76       29.23        65.36         34.43
+          3     20.88       30.35        47.66         31.37          ASN      1      29.22          35.57     12.09      21.76
+          4     46.41       45.79        62.18         35.11                   2      33.50          33.86     31.54      23.63
+  MET     1     27.12       49.00        25.92         30.40          ASP      1      37.75          47.06     26.56      22.12
+          2     62.99       60.54        33.79         44.09                   2      76.96          78.44     84.31      40.37
+          3     61.00       83.63        65.07         50.01          GLN      1      48.98          63.41     52.91      35.97
+  PHE     1     14.33       30.86        23.91         36.95                   2      56.98          66.90     66.23      38.39
+          2     98.51      110.39        43.41         23.76                   3      53.08          71.95     70.21      36.01
+  SER     1     62.66       48.56        43.89         35.95          GLU      1      55.72          69.74     63.63      35.05
+                                                                               2      34.69          32.36     30.77      41.16
+  THR     1     36.33       53.45        30.73         22.99
+                                                                               3      60.28          63.67     69.88      44.47
+  TRP     1     18.89       18.64        11.58         11.21
+                                                                       HIS     1      12.48          15.02     20.99      15.32
+          2     27.73       31.44        26.37         11.15
+                                                                               2      30.70          37.40     28.97      51.48
+  TYR     1     21.04       27.99        35.46         31.32
+                                                                       ILE     1      19.77          19.84     21.53      31.55
+          2    112.29       42.96        48.44         60.08
+                                                                               2      38.75          49.52     43.69      41.56
+  VAL     1     26.46       25.73        20.73         18.20
+                                                                      PRO      1      12.86          12.75     10.95      16.01
+  CYS     1     10.16       96.40        18.45          9.49                   2      18.97          18.30     16.61      23.55
+
+
+We also include per residue mean absolute errors of predicted four side-chain angles, as shown in Table 5. We observe
+that PepFlow consistently demonstrates better or competitive performance across most cases. Additionally, we notice that
+for chemically similar amino acids with analogous side-chain compositions, PepFlow exhibits similar performance. This
+suggests that our designed partial sampling strategy effectively models the distribution of side-chain conformations while
+adequately considering information from the amino acid sequence modality.
+
+B.5. More Sampling Results
+B.5.1. S EQUENCE -S TRUCTURE C O -D ESIGN
+We present additional sampling results of the full-atom PepFlow w/Bb+Seq+Ang for 6 different target protein pockets
+whose peptide binders have different lengths and topologies, as shown in Figure 8. We observe that PepFlow is capable of
+designing native-like peptides and using similar residue side-chains to bind key residues in the binding pocket. For short
+peptides, PepFlow tends to recover the original peptide with low sequence and structure diversities. In contrast, for long
+linear peptides, PepFlow generates peptides with sequences different from the native, yet they can bind to the same binding
+site utilizing other residue side-chain groups.
+
+B.5.2. S IDE - CHAIN PACKING
+We also include several side-chain packing results from PepFlow w/Bb+Seq+Ang in Figure 9. We observe that PepFlow
+can accurately recover the side-chains of the residues that are in contact with the target proteins, but performs poorly in
+modeling the outside residues. This may be attributed to the fact that the contact residues are constrained by binding sites,
+while the outside ones can exhibit more flexibility.
+
+                                                                 25
+                  Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+
+PDB:3AVF          Sample 1              Sample 2               Sample 3          Sample 4
+
+
+
+
+DLKIDNLD          ALKIDNLD              DGKIDNLD               DTKIDNLD          AGKIDNLD
+                  RMSD: 0.38            RMSD: 0.41             RMSD: 0.37        RMSD: 0.45
+PDB:3MXC          Sample 1              Sample 2               Sample 3          Sample 4
+
+
+
+
+GYENPTY           GYENPTY               GYENPTY                GYENPTY           GYENPTY
+                  RMSD: 0.63            RMSD: 0.60             RMSD: 0.37        RMSD: 0.59
+
+PDB:5DK0          Sample 1              Sample 2               Sample 3          Sample 4
+
+
+
+
+DCAWHLGELVWCT     DCAWHLGELVWCT         DCAWHLGELVWCT          DCAWHLGEAVWCT     DCAWHLGEVVWCT
+                  RMSD: 0.59            RMSD: 0.57             RMSD: 1.02        RMSD: 0.83
+
+
+PDB:6OX4          Sample 1              Sample 2               Sample 3          Sample 4
+
+
+
+
+TLKYPIEHGIVTNWD   AAASVKATATSDGVS       AGGSGPTTDADDSGR        AAASGATTASSDDLT   AAASGAALAGSDDVN
+                  RMSD: 3.17            RMSD: 2.94             RMSD: 2.98        RMSD: 2.90
+
+
+PDB:6V63          Sample 1              Sample 2               Sample 3          Sample 4
+
+
+
+
+TLKYPIEQGIVTNWD   GAGWATTTLASAND        GAKAPVTTLDTLDD         SATVPPTTPPRDDD    GGKPGPTTADSDSD
+DMEK              DGDTG                 FDGDG                  DDASG             DEDEG
+                  RMSD: 3.58            RMSD: 3.95             RMSD: 4.29        RMSD: 3.68
+
+PDB:1CKB          Sample 1              Sample 2               Sample 3          Sample 4
+
+
+
+
+TLKYPIEQGIVTNWD   APVPPPLP             APVVPPRR                APVVPPRR          RRPRPPLP
+DMEK              RMSD:0.78            RMSD:1.03               RMSD:0.83         RMSD:0.96
+
+
+
+
+                        Figure 8. Additional generated peptides by PepFlow.
+
+                                                26
+Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+
+
+
+Figure 9. Additional generated side-chain conformations by PepFlow.
+
+
+
+
+                                27
+                               Full-Atom Peptide Design based on Multi-modal Flow Matching
+
+C. Potential Applications
+Our proposed peptide generation model demonstrates effective applicability to the task of protein binder design, particularly
+in conjunction with specific receptor proteins. We promise to add more discussion about the application of binder design.
+Small protein binders, typically short, single-chain peptides, serve as important candidates in drug discovery and medical
+applications (Muttenthaler et al., 2021; Henninot et al., 2018). Take, for example, the widely recognized peptide drug
+GLP-1, which functions by binding to the GLP-1 receptor, aiding in the management of conditions such as diabetes and
+obesity (Cho & Kieffer, 2011; Skibicka, 2013). Moreover, compared to antibodies, peptides offer advantages in delivery and
+exhibit lower immunogenicity in the human body. Their utility extends beyond therapeutic purposes; peptide binders can
+also serve as contrast agents by specifically binding to receptors on certain cells, facilitating precise localization of those
+cells or tissues within the body (Nitin et al., 2004; Koudrina & DeRosa, 2020). The design of these bio-active peptides
+is fundamental to advancing medical science, and we believe our models can contribute significantly to this endeavor.
+Nevertheless, challenges persist in these applications, particularly due to the limited availability of complex data, which can
+impact the generalizability and scalability of the model.
+In addition to peptide binders, another class of biomolecules capable of binding to specific proteins is small molecule binders.
+Designing small molecules based on target structures has been extensively studied within the AI4S community (Luo et al.,
+2021; Peng et al., 2022). Notably, considering the atomic interactions between binders and receptors, researchers have
+identified that small molecules and peptides may utilize similar physical and chemical patterns to interact with key residues
+in receptors (Baines & Colas, 2006; Hummel et al., 2006). In light of this insight, we posit that developing a unified model
+capable of designing both small molecules and peptide binders at full-atom resolution represents a promising direction for
+future research.
+While our work primarily focuses on conditional peptide design to evaluate the performance of our proposed full-atom
+protein design models, it serves as a versatile framework applicable to unconditional protein design and conditional antibody
+loop design as well, in the full-atom sequence-structure co-design manner. We also acknowledge that the most reliable
+and accurate evaluation of the generated proteins can only be achieved through wet lab experiments, where in-silico based
+metrics can be used for selecting good candidates from a large number of generated proteins.
+
+
+
+
+                                                              28
+
