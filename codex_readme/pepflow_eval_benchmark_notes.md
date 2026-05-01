@@ -166,7 +166,8 @@ What to run here:
 
 Status:
 - `pyrosetta-installer` is installed
-- `pyrosetta` wheel itself is not installed by default (needs explicit installer step)
+- `pyrosetta` wheel is installed (via `python -c "import pyrosetta_installer; pyrosetta_installer.install_pyrosetta()"`)
+- `eval/energy.py` import + `multienv_eval_runner.py --mode energy` smoke test both pass
 
 ### 7.3 ESM-IF + ProteinMPNN env (`pepflow-eval-esm-if-mpnn`)
 
@@ -210,6 +211,9 @@ Purpose:
 - orchestrate eval by calling `conda run --no-capture-output -n <env> ...` from Python
 - support split execution across main env and energy env
 - provide optional extra conda steps for baseline/external tool commands
+
+Implementation note:
+- inside `_run_in_conda`, use `bash -c` (not `bash -lc`), otherwise login shell may reset to base Python and break package resolution.
 
 Core modes:
 1. `orchestrate` (default)

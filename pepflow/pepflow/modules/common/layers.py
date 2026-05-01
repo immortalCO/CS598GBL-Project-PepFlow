@@ -16,9 +16,17 @@ def clampped_one_hot(x, num_classes):
 
 def sample_from(c):
     """sample from c"""
-    N,L,K = c.size()
-    c = c.view(N*L,K) + 1e-8
-    x = torch.multinomial(c,1).view(N,L)
+    N, L, K = c.size()
+    c = c.reshape(N * L, K)
+    c = torch.nan_to_num(c, nan=0.0, posinf=0.0, neginf=0.0)
+    c = torch.clamp(c, min=0.0)
+    row_sum = c.sum(dim=-1, keepdim=True)
+    bad_rows = row_sum <= 0
+    if bad_rows.any():
+        c[bad_rows.squeeze(-1)] = 1.0
+        row_sum = c.sum(dim=-1, keepdim=True)
+    c = c / (row_sum + 1e-12)
+    x = torch.multinomial(c, 1).view(N, L)
     return x
 
 class DistanceToBins(nn.Module):

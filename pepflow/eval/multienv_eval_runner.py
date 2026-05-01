@@ -32,7 +32,8 @@ def _run_bash(cmd: str, cwd: Path, dry_run: bool = False) -> None:
 
 
 def _run_in_conda(env_name: str, inner_cmd: str, cwd: Path, dry_run: bool = False) -> None:
-    cmd = f"conda run --no-capture-output -n {shlex.quote(env_name)} bash -lc {shlex.quote(inner_cmd)}"
+    # Use `bash -c` (not `-lc`): login shells can reset PATH and bypass conda env python.
+    cmd = f"conda run --no-capture-output -n {shlex.quote(env_name)} bash -c {shlex.quote(inner_cmd)}"
     _run_bash(cmd, cwd=cwd, dry_run=dry_run)
 
 
@@ -165,7 +166,8 @@ def _mode_energy(sample_dir: Path, chain_id: str, max_samples_per_target: int | 
         from energy import get_rosetta_score
     except Exception as exc:
         raise RuntimeError(
-            "Failed to import eval/energy.py. Ensure PyRosetta is installed in this env."
+            "Failed to import eval/energy.py. Install PyRosetta in this env first, e.g.:\n"
+            "python -c \"import pyrosetta_installer; pyrosetta_installer.install_pyrosetta()\""
         ) from exc
 
     target_dirs = _discover_target_dirs(sample_dir)
