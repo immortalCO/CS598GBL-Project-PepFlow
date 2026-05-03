@@ -21,6 +21,7 @@ from models_con.flow_model import FlowModel
 from models_con.pep_dataloader import PepDataset
 from models_con.torsion import torsions_mask
 from models_con.utils import process_dic
+from pepflow.modules.protein.constants import AA
 from pepflow.utils.data import PaddingCollate
 from pepflow.utils.misc import BlackHole, current_milli_time, get_logger, load_config, seed_all
 from pepflow.utils.train import (
@@ -272,16 +273,38 @@ def compute_group_advantages(rewards, batch_size, group_size, eps):
     return adv.reshape(-1), mu.reshape(-1), sigma.reshape(-1)
 
 
-def compute_seq_logprob_score(model_core: FlowModel, batch):
+def build_score_batch(base_batch, group_size: int, unk_idx: int):
+    score_batch = repeat_batch(base_batch, group_size)
+    gen_mask = score_batch["generate_mask"]
+    repeated_aa = base_batch["aa"].repeat_interleave(group_size, dim=0)
+    # Avoid action leakage in policy scoring: generated positions are unknown condition.
+    unknown_aa = torch.full_like(repeated_aa, fill_value=int(unk_idx))
+    score_batch["aa"] = torch.where(gen_mask, unknown_aa, repeated_aa)
+    return score_batch
+
+
+def compute_seq_logprob_score(
+    model_core: FlowModel,
+    batch,
+    target_seqs: torch.Tensor,
+    seqs_t_input: torch.Tensor = None,
+    angles_t_input: torch.Tensor = None,
+    rotmats_t_input: torch.Tensor = None,
+    trans_t_input: torch.Tensor = None,
+):
     rotmats_1, trans_1, angles_1, seqs_1, node_embed, edge_embed = model_core.encode(batch)
     num_batch = batch["aa"].shape[0]
     t = torch.ones((num_batch, 1), device=batch["aa"].device)
+    seqs_t = seqs_1 if seqs_t_input is None else seqs_t_input
+    angles_t = angles_1 if angles_t_input is None else angles_t_input
+    rotmats_t = rotmats_1 if rotmats_t_input is None else rotmats_t_input
+    trans_t = trans_1 if trans_t_input is None else trans_t_input
     pred_rotmats_1, pred_trans_1, pred_angles_1, pred_seqs_1_logits = model_core.ga_encoder(
         t,
-        rotmats_1,
-        trans_1,
-        angles_1,
-        seqs_1,
+        rotmats_t,
+        trans_t,
+        angles_t,
+        seqs_t,
         node_embed,
         edge_embed,
         batch["generate_mask"].long(),
@@ -290,7 +313,7 @@ def compute_seq_logprob_score(model_core: FlowModel, batch):
     _ = pred_rotmats_1, pred_trans_1, pred_angles_1  # keep explicit unpack for clarity
     pred_seqs_1_logits = torch.nan_to_num(pred_seqs_1_logits, nan=0.0, posinf=20.0, neginf=-20.0)
     log_probs = F.log_softmax(pred_seqs_1_logits, dim=-1)
-    tgt = torch.clamp(seqs_1.long(), 0, pred_seqs_1_logits.shape[-1] - 1)
+    tgt = torch.clamp(target_seqs.long(), 0, pred_seqs_1_logits.shape[-1] - 1)
     token_logp = torch.gather(log_probs, dim=-1, index=tgt.unsqueeze(-1)).squeeze(-1)
     gen_mask = batch["generate_mask"].float()
     score = (token_logp * gen_mask).sum(dim=-1) / (gen_mask.sum(dim=-1) + 1e-8)
@@ -607,6 +630,8 @@ def main():
             gt_seqs = final["seqs_1"].to(local_rank).long().clamp(min=0, max=num_classes - 1)
             sampled_angles = final["angles"].to(local_rank)
             gt_angles = final["angles_1"].to(local_rank)
+            sampled_rotmats = final["rotmats"].to(local_rank)
+            sampled_trans = final["trans"].to(local_rank)
 
             reward_aar = compute_aar_reward(
                 sampled_seqs=sampled_seqs,
@@ -643,16 +668,16 @@ def main():
 
         rollout_end = current_milli_time()
 
-        score_batch = repeat_batch(batch, args.group_size)
-        score_batch["aa"] = sampled_seqs
-        score_batch["aa"] = torch.where(
-            score_batch["generate_mask"],
-            score_batch["aa"],
-            batch["aa"].repeat_interleave(args.group_size, dim=0),
-        )
+        score_batch = build_score_batch(batch, args.group_size, int(AA.UNK))
+        score_kwargs = {
+            "target_seqs": sampled_seqs,
+            "angles_t_input": sampled_angles if args.sample_ang else None,
+            "rotmats_t_input": sampled_rotmats if args.sample_bb else None,
+            "trans_t_input": sampled_trans if args.sample_bb else None,
+        }
 
         with torch.no_grad():
-            s_old = compute_seq_logprob_score(model_old, score_batch)
+            s_old = compute_seq_logprob_score(model_old, score_batch, **score_kwargs)
             s_old = torch.nan_to_num(s_old, nan=0.0, posinf=0.0, neginf=0.0)
 
         update_losses = []
@@ -667,7 +692,7 @@ def main():
         skipped_updates = 0
 
         for _ in range(max(1, int(args.updates_per_rollout))):
-            s_theta = compute_seq_logprob_score(model.module, score_batch)
+            s_theta = compute_seq_logprob_score(model.module, score_batch, **score_kwargs)
             s_theta = torch.nan_to_num(s_theta, nan=0.0, posinf=0.0, neginf=0.0)
             score_delta = s_theta - s_old
             log_ratio = torch.clamp(score_delta, min=-args.score_clip, max=args.score_clip)
