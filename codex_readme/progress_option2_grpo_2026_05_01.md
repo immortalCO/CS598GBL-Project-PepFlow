@@ -337,3 +337,71 @@ Interpretation:
 
 - Conservative + mixed reward is currently the best level2 variant tested so far.
 - It still underperforms official baseline slightly, but the gap is now much smaller (`-1.70`).
+
+---
+
+## 10) Latest Update (2026-05-03): Aggressive Level2 (Level1-Style) Beats Baseline
+
+### Setting
+
+- Script:
+  - `pepflow/scripts/run_option2_ddp_level2_level1style_train_auto_4gpu.sh`
+- level2 mode:
+  - `sample_bb=False`
+  - `sample_ang=True`
+  - `sample_seq=True`
+- Hyperparameters (aligned with previously strong level1 style):
+  - `lr=1e-4`
+  - `lambda_sup=0.1`
+  - `updates_per_rollout=2`
+  - `old_sync_interval=16`
+  - `group_size=4`
+  - `num_steps=20`
+  - `clip_eps=0.2`
+  - `score_clip=20.0`
+  - `reward_mode=aar`
+  - `max_iters=1200`
+
+### Training Outcome
+
+- Run dir:
+  - `pepflow/outputs/option2_grpo_level2_level1style_train4g_learn_angle_2026_05_03__05_20_40/`
+- Completion:
+  - reached `iter=1200` and exited successfully
+  - no NaN / no deadlock
+  - `skipped_updates=0` through monitored progression
+
+### Quick Eval (GPU, level2 protocol)
+
+- Files:
+  - `pepflow/outputs/quick_eval_option2_level2_vs_official_level1style1200_fix.log`
+  - `pepflow/outputs/quick_eval_option2_level2_vs_official_level1style1200_fix.json`
+- AAR:
+  - official: `46.90%`
+  - level2 level1-style (`iter1200`): `48.70%`
+  - delta: `+1.79` percentage points (about `+3.82%` relative)
+
+### Interpretation
+
+- This is the **first confirmed level2 run that exceeds official checkpoint** in our quick protocol.
+- Current best level2 setting is now this aggressive level1-style configuration.
+
+---
+
+## 11) Repository Cleanup (Attempts Archive)
+
+To reduce clutter and keep reproducible entrypoints clear:
+
+- Created:
+  - `pepflow/scripts/attempts/`
+  - `pepflow/outputs/attempts/`
+- Kept at top-level `pepflow/scripts/` (best/active):
+  - `run_option2_ddp_train_4gpu.sh` (best level1 entry)
+  - `run_option2_ddp_level2_level1style_train_auto_4gpu.sh` (best level2 entry)
+  - quick eval utilities (`run_quick_eval_option2*.sh`)
+- Moved non-best training/smoke scripts into:
+  - `pepflow/scripts/attempts/`
+- Moved non-best run directories, smoke outputs, and older eval/sweep artifacts into:
+  - `pepflow/outputs/attempts/`
+
+Current top-level outputs are now focused on best checkpoints and their direct eval artifacts.
