@@ -8,12 +8,13 @@ cd "${PROJECT_DIR}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 python - <<'PY'
-import os
 import gc
 import glob
 import json
+import os
 import time
 from copy import deepcopy
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -26,38 +27,40 @@ from models_con.flow_model import FlowModel
 from models_con.utils import process_dic
 
 
-def find_latest_ckpt():
-    env_ckpt = os.environ.get("NEW_CKPT", "").strip()
-    if env_ckpt:
-        if not os.path.exists(env_ckpt):
-            raise FileNotFoundError(f"NEW_CKPT does not exist: {env_ckpt}")
-        return env_ckpt
+def resolve_run_dir():
+    env_dir = os.environ.get("SWEEP_RUN_DIR", "").strip()
+    if env_dir:
+        p = Path(env_dir)
+        if not p.exists():
+            raise FileNotFoundError(f"SWEEP_RUN_DIR not found: {env_dir}")
+        return p
 
     patterns = [
-        "./outputs/option2_grpo_level2_seqang_tuned_train4g_*",
-        "./outputs/option2_grpo_level2_seqang_train4g_*",
+        "./outputs/option2_grpo_level2_superconservative_lsup050_mix_train4g_*",
+        "./outputs/option2_grpo_level2_superconservative_mix_train4g_*",
     ]
     run_dirs = []
-    for p in patterns:
-        run_dirs.extend(glob.glob(p))
+    for pat in patterns:
+        run_dirs.extend(glob.glob(pat))
     run_dirs = sorted(run_dirs)
     if not run_dirs:
-        raise FileNotFoundError(
-            "No level2 run dir found under "
-            "./outputs/option2_grpo_level2_seqang_tuned_train4g_* "
-            "or ./outputs/option2_grpo_level2_seqang_train4g_*"
-        )
-    latest_run = run_dirs[-1]
-    ckpt_dir = os.path.join(latest_run, "checkpoints")
-    ckpts = []
-    for path in glob.glob(os.path.join(ckpt_dir, "*.pt")):
-        name = os.path.basename(path).replace(".pt", "")
-        if name.isdigit():
-            ckpts.append((int(name), path))
-    if not ckpts:
-        raise FileNotFoundError(f"No numeric checkpoint found under: {ckpt_dir}")
-    ckpts.sort(key=lambda x: x[0])
-    return ckpts[-1][1]
+        raise FileNotFoundError("No matching level2 run dirs found for sweep.")
+    return Path(run_dirs[-1])
+
+
+def resolve_steps():
+    steps_env = os.environ.get("SWEEP_STEPS", "1000,1050,1100,1150,1200").strip()
+    steps = []
+    for s in steps_env.split(","):
+        s = s.strip()
+        if not s:
+            continue
+        if not s.isdigit():
+            raise ValueError(f"Invalid checkpoint step in SWEEP_STEPS: {s}")
+        steps.append(int(s))
+    if not steps:
+        raise ValueError("No checkpoint steps resolved for sweep.")
+    return steps
 
 
 def evaluate_ckpt(label, ckpt_path, cfg, dataset, device, num_steps, num_samples):
@@ -105,9 +108,7 @@ def evaluate_ckpt(label, ckpt_path, cfg, dataset, device, num_steps, num_samples
             seqs = final["seqs"].to(work_device)
             seqs_1 = final["seqs_1"].to(work_device)
             denom = gen_mask.sum() + 1e-8
-            ca_dist = torch.sqrt(
-                torch.sum((trans - trans_1) ** 2 * gen_mask[..., None]) / denom
-            )
+            ca_dist = torch.sqrt(torch.sum((trans - trans_1) ** 2 * gen_mask[..., None]) / denom)
             rot_dist = torch.sqrt(
                 torch.sum((rotmats - rotmats_1) ** 2 * gen_mask[..., None, None]) / denom
             )
@@ -168,16 +169,22 @@ def main():
         transform=None,
         reset=cfg.dataset.val.reset,
     )
-
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     num_steps = 20
     num_samples = 10
-    latest_level2_ckpt = find_latest_ckpt()
 
-    ckpts = [
-        ("official_model1_level2_sampling", "./ckpts/model1.pt"),
-        ("option2_level2_latest", latest_level2_ckpt),
-    ]
+    run_dir = resolve_run_dir()
+    steps = resolve_steps()
+    ckpt_dir = run_dir / "checkpoints"
+    ckpt_paths = []
+    for step in steps:
+        p = ckpt_dir / f"{step}.pt"
+        if not p.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {p}")
+        ckpt_paths.append((step, str(p)))
+
+    print(f"[info] device={device} run_dir={run_dir}", flush=True)
+    print(f"[info] sweep_steps={steps}", flush=True)
 
     results = {
         "settings": {
@@ -189,19 +196,32 @@ def main():
             "sample_ang": True,
             "sample_seq": True,
             "level": 2,
+            "run_dir": str(run_dir),
+            "sweep_steps": steps,
         },
         "models": {},
+        "sweep": [],
     }
 
-    print(
-        f"[info] device={device} dataset_len={len(dataset)} "
-        f"num_steps={num_steps} num_samples={num_samples}",
-        flush=True,
+    official = evaluate_ckpt(
+        label="official_model1_level2_sampling",
+        ckpt_path="./ckpts/model1.pt",
+        cfg=cfg,
+        dataset=dataset,
+        device=device,
+        num_steps=num_steps,
+        num_samples=num_samples,
     )
-    print(f"[info] auto-resolved level2 checkpoint: {latest_level2_ckpt}", flush=True)
-    for label, ckpt_path in ckpts:
+    results["models"]["official_model1_level2_sampling"] = official
+    official_aar = official["aar_mean"]
+    print(f"[info] official aar_mean={official_aar:.6f}", flush=True)
+
+    best_step = None
+    best_aar = -1.0
+    for step, ckpt_path in ckpt_paths:
+        label = f"option2_step_{step}"
         print(f"[info] evaluating {label} from {ckpt_path}", flush=True)
-        results["models"][label] = evaluate_ckpt(
+        model_result = evaluate_ckpt(
             label=label,
             ckpt_path=ckpt_path,
             cfg=cfg,
@@ -210,15 +230,60 @@ def main():
             num_steps=num_steps,
             num_samples=num_samples,
         )
+        results["models"][label] = model_result
+        aar = model_result["aar_mean"]
+        delta = aar - official_aar
+        results["sweep"].append(
+            {
+                "step": step,
+                "ckpt_path": ckpt_path,
+                "aar_mean": aar,
+                "delta_vs_official": delta,
+                "trans_loss_mean": model_result["trans_loss_mean"],
+                "rot_loss_mean": model_result["rot_loss_mean"],
+            }
+        )
+        print(
+            f"[sweep] step={step} aar_mean={aar:.6f} delta_vs_official={delta:+.6f}",
+            flush=True,
+        )
+        if aar > best_aar:
+            best_aar = aar
+            best_step = step
 
-    out_dir = "./outputs"
-    os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, "quick_eval_option2_level2_vs_official.json")
-    with open(out_path, "w", encoding="utf-8") as f:
+    results["best"] = {
+        "step": best_step,
+        "aar_mean": best_aar,
+        "delta_vs_official": best_aar - official_aar,
+    }
+
+    out_dir = Path("./outputs")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    run_name = run_dir.name
+    out_json = out_dir / f"quick_eval_option2_level2_sweep_{run_name}.json"
+    out_txt = out_dir / f"quick_eval_option2_level2_sweep_{run_name}.txt"
+
+    with out_json.open("w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
 
-    print(f"RESULT_JSON {out_path}", flush=True)
-    print(json.dumps(results, indent=2), flush=True)
+    lines = []
+    lines.append(f"run_dir: {run_dir}")
+    lines.append(f"official_aar_mean: {official_aar:.6f}")
+    lines.append("sweep_results:")
+    for item in results["sweep"]:
+        lines.append(
+            f"  step={item['step']}, aar_mean={item['aar_mean']:.6f}, "
+            f"delta_vs_official={item['delta_vs_official']:+.6f}"
+        )
+    lines.append(
+        f"best_step={best_step}, best_aar_mean={best_aar:.6f}, "
+        f"best_delta_vs_official={best_aar - official_aar:+.6f}"
+    )
+    out_txt.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    print(f"RESULT_SWEEP_JSON {out_json}", flush=True)
+    print(f"RESULT_SWEEP_TXT {out_txt}", flush=True)
+    print(json.dumps(results["best"], indent=2), flush=True)
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ import yaml
 
 from models_con.flow_model import FlowModel
 from models_con.pep_dataloader import PepDataset
+from models_con.torsion import torsions_mask
 from models_con.utils import process_dic
 from pepflow.utils.data import PaddingCollate
 from pepflow.utils.misc import BlackHole, current_milli_time, get_logger, load_config, seed_all
@@ -77,6 +78,16 @@ def parse_args():
     parser.add_argument("--old_sync_interval", type=int, default=16)
     parser.add_argument("--adv_eps", type=float, default=1e-6)
     parser.add_argument("--score_clip", type=float, default=20.0)
+    parser.add_argument(
+        "--reward_mode",
+        type=str,
+        choices=["aar", "mix_level2"],
+        default="aar",
+        help="Reward mode: pure AAR or level2 mixed reward.",
+    )
+    parser.add_argument("--reward_w_aar", type=float, default=0.7)
+    parser.add_argument("--reward_w_ang", type=float, default=0.2)
+    parser.add_argument("--reward_w_tor", type=float, default=0.1)
     parser.add_argument("--save_freq", type=int, default=100)
     parser.add_argument("--max_iters", type=int, default=None)
     parser.add_argument(
@@ -150,6 +161,11 @@ def reduce_mean_finite(x: torch.Tensor) -> torch.Tensor:
     return torch.tensor(float("nan"), device=x.device)
 
 
+def set_optimizer_lr(optimizer, lr: float):
+    for pg in optimizer.param_groups:
+        pg["lr"] = lr
+
+
 def broadcast_str(value: str, src: int = 0) -> str:
     if not _is_dist():
         return value
@@ -214,6 +230,40 @@ def compute_aar_reward(sampled_seqs, gt_seqs, generate_mask, eps=1e-8):
     return per_sample
 
 
+def compute_angle_consistency_reward(sampled_angles, gt_angles, generate_mask, eps=1e-8):
+    delta = torch.atan2(
+        torch.sin(sampled_angles - gt_angles),
+        torch.cos(sampled_angles - gt_angles),
+    )
+    sim = 0.5 * (torch.cos(delta) + 1.0)
+    mask = generate_mask.float().unsqueeze(-1).expand_as(sim)
+    per_sample = (sim * mask).sum(dim=(-1, -2)) / (mask.sum(dim=(-1, -2)) + eps)
+    return per_sample
+
+
+def compute_torsion_consistency_reward(sampled_angles, gt_angles, sampled_seqs, generate_mask, eps=1e-8):
+    seq_idx = torch.clamp(sampled_seqs.long(), min=0, max=torsions_mask.shape[0] - 1)
+    tor_mask = torsions_mask.to(sampled_angles.device)[seq_idx].float()
+    delta = torch.atan2(
+        torch.sin(sampled_angles - gt_angles),
+        torch.cos(sampled_angles - gt_angles),
+    )
+    sim = 0.5 * (torch.cos(delta) + 1.0)
+    full_mask = generate_mask.float().unsqueeze(-1) * tor_mask
+    per_sample = (sim * full_mask).sum(dim=(-1, -2)) / (full_mask.sum(dim=(-1, -2)) + eps)
+    return per_sample
+
+
+def mix_level2_reward(args, reward_aar, reward_ang, reward_tor):
+    w_aar = float(args.reward_w_aar)
+    w_ang = float(args.reward_w_ang)
+    w_tor = float(args.reward_w_tor)
+    w_sum = w_aar + w_ang + w_tor
+    if w_sum <= 0:
+        return reward_aar
+    return (w_aar * reward_aar + w_ang * reward_ang + w_tor * reward_tor) / w_sum
+
+
 def compute_group_advantages(rewards, batch_size, group_size, eps):
     r = rewards.view(batch_size, group_size)
     mu = r.mean(dim=-1, keepdim=True)
@@ -259,14 +309,36 @@ def get_rng_state(local_rank):
 def set_rng_state(state, local_rank):
     if state is None:
         return
+
+    def _to_byte_tensor(x):
+        if isinstance(x, torch.Tensor):
+            return x.to(dtype=torch.uint8, device="cpu")
+        if isinstance(x, (bytes, bytearray)):
+            return torch.tensor(list(x), dtype=torch.uint8)
+        if isinstance(x, np.ndarray):
+            return torch.from_numpy(x.astype(np.uint8, copy=False)).cpu()
+        if isinstance(x, list):
+            return torch.tensor(x, dtype=torch.uint8)
+        return None
+
     if "torch" in state:
-        torch.set_rng_state(state["torch"])
+        torch_state = _to_byte_tensor(state["torch"])
+        if torch_state is not None:
+            torch.set_rng_state(torch_state)
     if "cuda" in state:
-        torch.cuda.set_rng_state(state["cuda"], device=local_rank)
+        cuda_state = _to_byte_tensor(state["cuda"])
+        if cuda_state is not None:
+            torch.cuda.set_rng_state(cuda_state, device=local_rank)
     if "numpy" in state:
-        np.random.set_state(state["numpy"])
+        try:
+            np.random.set_state(state["numpy"])
+        except Exception:
+            pass
     if "python" in state:
-        random.setstate(state["python"])
+        try:
+            random.setstate(state["python"])
+        except Exception:
+            pass
 
 
 def setup_run_dir(args, config_name):
@@ -354,6 +426,13 @@ def main():
         args.sample_ang,
         args.sample_seq,
     )
+    logger.info(
+        "Reward mode: %s (w_aar=%.3f, w_ang=%.3f, w_tor=%.3f)",
+        args.reward_mode,
+        args.reward_w_aar,
+        args.reward_w_ang,
+        args.reward_w_tor,
+    )
 
     train_dataset = PepDataset(
         structure_dir=config.dataset.train.structure_dir,
@@ -382,8 +461,7 @@ def main():
         p.requires_grad_(False)
 
     optimizer = get_optimizer(config.train.optimizer, model)
-    for pg in optimizer.param_groups:
-        pg["lr"] = args.lr
+    set_optimizer_lr(optimizer, args.lr)
     scheduler = get_scheduler(config.train.scheduler, optimizer)
     optimizer.zero_grad()
     successful_updates = 0
@@ -403,6 +481,9 @@ def main():
         it_first = int(ckpt["iteration"]) + 1
         set_rng_state(ckpt.get("rng_state", None), local_rank)
         successful_updates = int(ckpt.get("successful_updates", 0))
+        set_optimizer_lr(optimizer, args.lr)
+        if is_main:
+            logger.info("Applied args.lr=%s after resume load.", args.lr)
     else:
         logger.info(f"Loading init checkpoint from {args.init_ckpt}")
         ckpt = torch.load(args.init_ckpt, map_location=f"cuda:{local_rank}", weights_only=False)
@@ -428,6 +509,9 @@ def main():
         "reward_mean",
         "reward_std",
         "reward_max",
+        "reward_aar_mean",
+        "reward_ang_mean",
+        "reward_tor_mean",
         "adv_mean",
         "adv_std",
         "rho_mean",
@@ -484,6 +568,10 @@ def main():
                     "old_sync_interval": args.old_sync_interval,
                     "adv_eps": args.adv_eps,
                     "score_clip": args.score_clip,
+                    "reward_mode": args.reward_mode,
+                    "reward_w_aar": args.reward_w_aar,
+                    "reward_w_ang": args.reward_w_ang,
+                    "reward_w_tor": args.reward_w_tor,
                     "sampling_mode": {
                         "sample_bb": args.sample_bb,
                         "sample_ang": args.sample_ang,
@@ -517,12 +605,34 @@ def main():
             num_classes = int(model.module._interpolant_cfg.seqs.num_classes)
             sampled_seqs = final["seqs"].to(local_rank).long().clamp(min=0, max=num_classes - 1)
             gt_seqs = final["seqs_1"].to(local_rank).long().clamp(min=0, max=num_classes - 1)
+            sampled_angles = final["angles"].to(local_rank)
+            gt_angles = final["angles_1"].to(local_rank)
 
-            rewards = compute_aar_reward(
+            reward_aar = compute_aar_reward(
                 sampled_seqs=sampled_seqs,
                 gt_seqs=gt_seqs,
                 generate_mask=expanded_batch["generate_mask"],
             )
+            reward_ang = compute_angle_consistency_reward(
+                sampled_angles=sampled_angles,
+                gt_angles=gt_angles,
+                generate_mask=expanded_batch["generate_mask"],
+            )
+            reward_tor = compute_torsion_consistency_reward(
+                sampled_angles=sampled_angles,
+                gt_angles=gt_angles,
+                sampled_seqs=sampled_seqs,
+                generate_mask=expanded_batch["generate_mask"],
+            )
+            if args.reward_mode == "mix_level2":
+                rewards = mix_level2_reward(args, reward_aar, reward_ang, reward_tor)
+            else:
+                rewards = reward_aar
+
+            rewards = torch.nan_to_num(rewards, nan=0.0, posinf=0.0, neginf=0.0)
+            reward_aar = torch.nan_to_num(reward_aar, nan=0.0, posinf=0.0, neginf=0.0)
+            reward_ang = torch.nan_to_num(reward_ang, nan=0.0, posinf=0.0, neginf=0.0)
+            reward_tor = torch.nan_to_num(reward_tor, nan=0.0, posinf=0.0, neginf=0.0)
             adv, _, _ = compute_group_advantages(
                 rewards=rewards,
                 batch_size=bsz,
@@ -633,6 +743,9 @@ def main():
         reward_mean = reduce_mean(rewards.mean())
         reward_std = reduce_mean(rewards.std(unbiased=False))
         reward_max = reduce_max(rewards.max())
+        reward_aar_mean = reduce_mean(reward_aar.mean())
+        reward_ang_mean = reduce_mean(reward_ang.mean())
+        reward_tor_mean = reduce_mean(reward_tor.mean())
         adv_mean = reduce_mean(adv.mean())
         adv_std = reduce_mean(adv.std(unbiased=False))
 
@@ -668,6 +781,9 @@ def main():
                 "reward_mean": reward_mean,
                 "reward_std": reward_std,
                 "reward_max": reward_max,
+                "reward_aar_mean": reward_aar_mean,
+                "reward_ang_mean": reward_ang_mean,
+                "reward_tor_mean": reward_tor_mean,
                 "adv_mean": adv_mean,
                 "adv_std": adv_std,
                 "rho_mean": rho_mean,
@@ -691,6 +807,9 @@ def main():
                 "reward_mean": float(reward_mean.item()),
                 "reward_std": float(reward_std.item()),
                 "reward_max": float(reward_max.item()),
+                "reward_aar_mean": float(reward_aar_mean.item()),
+                "reward_ang_mean": float(reward_ang_mean.item()),
+                "reward_tor_mean": float(reward_tor_mean.item()),
                 "adv_mean": float(adv_mean.item()),
                 "adv_std": float(adv_std.item()),
                 "rho_mean": float(rho_mean.item()),

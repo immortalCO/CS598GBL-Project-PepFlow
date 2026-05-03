@@ -160,3 +160,180 @@ Interpretation:
 - Pipeline and training/eval infra are working normally in level2 (technical path is healthy).
 - Current level2 quality after short training (iter100 checkpoint) is **below** official baseline on AAR.
 - This indicates we should continue training longer and/or retune hyperparameters for level2 before claiming improvement.
+
+---
+
+## 7) Latest Update: Tuned Level2 Full Run (Completed)
+
+### Run Plan Executed
+
+- Script: `pepflow/scripts/run_option2_ddp_level2_tuned_train_auto_4gpu.sh`
+- 4-GPU DDP, level2 mode (`sample_bb=False, sample_ang=True, sample_seq=True`)
+- Tuned key args:
+  - `lr=5e-5`
+  - `lambda_sup=0.2`
+  - `updates_per_rollout=1`
+  - `old_sync_interval=8`
+  - `max_iters=1000`
+  - `save_freq=50`
+
+### Training Completion / Stability
+
+- Run dir:
+  - `pepflow/outputs/option2_grpo_level2_seqang_tuned_train4g_learn_angle_2026_05_01__09_17_37/`
+- Final checkpoint:
+  - `checkpoints/1000.pt`
+- Auto-train status:
+  - **completed successfully** on first attempt (`[auto-train] completed successfully`)
+- Monitoring summary:
+  - no NaN loss
+  - no skipped updates (`skipped_updates=0` throughout monitored progress)
+  - no DDP deadlock
+  - no forced restart needed
+
+### Post-Train Quick Eval (GPU, level2 protocol)
+
+- Command path:
+  - `pepflow/scripts/run_quick_eval_option2_level2_gpu.sh`
+- Output files:
+  - `pepflow/outputs/quick_eval_option2_level2_vs_official.json`
+  - `pepflow/outputs/quick_eval_option2_level2_vs_official_tuned1000.log`
+
+AAR comparison:
+
+- `official_model1_level2_sampling`: `46.90%`
+- `option2_level2_latest` (`iter1000`): `39.01%`
+- delta: `-7.89` percentage points
+
+Interpretation:
+
+- Infra path is stable and reproducible (training + resume/checkpoint/eval all normal).
+- But this tuned level2 run shows **significant degradation** vs official baseline on AAR under current quick protocol.
+- Next tuning should focus on reducing policy drift / improving reward signal quality in level2.
+
+---
+
+## 8) Latest Update: Medium-Explore + Mixed Reward (Level2)
+
+### Setting Applied
+
+- Script:
+  - `pepflow/scripts/run_option2_ddp_level2_medium_mix_train_auto_4gpu.sh`
+- Mode:
+  - level2 (`sample_bb=False, sample_ang=True, sample_seq=True`)
+- Hyperparameters (medium explore):
+  - `lr=2e-5`
+  - `lambda_sup=0.4`
+  - `group_size=6`
+  - `num_steps=16`
+  - `updates_per_rollout=1`
+  - `old_sync_interval=2`
+  - `clip_eps=0.1`
+  - `score_clip=5.0`
+- Reward:
+  - `reward_mode=mix_level2`
+  - `0.7 * AAR + 0.2 * angle_consistency + 0.1 * torsion_consistency`
+
+### Run Outcome
+
+- Run dir:
+  - `pepflow/outputs/option2_grpo_level2_medium_mix_train4g_learn_angle_2026_05_01__14_47_13/`
+- Full training reached:
+  - `iter=1000` with `checkpoints/1000.pt`
+- Monitoring summary:
+  - no NaN
+  - `skipped_updates=0` through monitored trajectory
+  - no DDP deadlock
+
+### Fixes Discovered During This Run
+
+1. Mixed reward normalization bug
+- `angle reward` was unintentionally scaled too large (missing angle-dimension normalization).
+- Fixed in `train_ddp_option2.py` by expanding mask to full angle shape before averaging.
+
+2. Auto-restart resume argument bug
+- Auto script resume branch passed `--resume` without `--init_ckpt`, while parser requires `--init_ckpt`.
+- Fixed script to always pass `--init_ckpt` in resume branch.
+
+3. Resume RNG compatibility bug
+- Some resumed checkpoints had RNG state types not directly accepted by `torch.set_rng_state`.
+- Added safe conversion/fallback in `set_rng_state` to robustly handle list/ndarray/bytes tensor formats.
+
+### Quick Eval (GPU, level2 protocol)
+
+- Files:
+  - `pepflow/outputs/quick_eval_option2_level2_vs_official.json`
+  - `pepflow/outputs/quick_eval_option2_level2_vs_official_medium_mix1000.log`
+- AAR:
+  - official: `46.90%`
+  - medium+mix (`iter1000`): `40.80%`
+  - delta: `-6.11` percentage points
+
+### Interpretation
+
+- Compared with previous tuned-level2 run (`39.01%`), medium+mix improved to `40.80%` (+1.79 points).
+- But it is still below official baseline, so this direction is **partially improved but not yet sufficient**.
+
+---
+
+## 9) Conservative + Mixed Reward (Completed)
+
+### Reason
+
+- Medium+mix improved over tuned-level2 but still lagged official baseline.
+- This run tested a more conservative regime to reduce policy drift while keeping mixed reward.
+
+### Config Used
+
+- Script:
+  - `pepflow/scripts/run_option2_ddp_level2_conservative_mix_train_auto_4gpu.sh`
+- level2 mode:
+  - `sample_bb=False`
+  - `sample_ang=True`
+  - `sample_seq=True`
+- GRPO / optimization:
+  - `lr=1e-5`
+  - `lambda_sup=0.5`
+  - `updates_per_rollout=1`
+  - `old_sync_interval=1`
+  - `clip_eps=0.1`
+  - `score_clip=5.0`
+  - `group_size=4`
+  - `num_steps=20`
+- reward:
+  - `reward_mode=mix_level2`
+  - `reward_w_aar=0.7`
+  - `reward_w_ang=0.2`
+  - `reward_w_tor=0.1`
+
+### Run Outcome
+
+- Run dir:
+  - `pepflow/outputs/option2_grpo_level2_conservative_mix_train4g_learn_angle_2026_05_01__17_17_34/`
+- Full training reached:
+  - `iter=1000` with `checkpoints/1000.pt`
+- Stability summary:
+  - no NaN
+  - no DDP deadlock
+  - `skipped_updates=0` through monitored progression
+  - auto-train finished cleanly (`[auto-train] completed successfully`)
+
+### Quick Eval (GPU, level2 protocol)
+
+- Files:
+  - `pepflow/outputs/quick_eval_option2_level2_vs_official.json`
+  - `pepflow/outputs/quick_eval_option2_level2_vs_official_conservative_mix1000.log`
+- AAR:
+  - official: `46.90%`
+  - conservative+mix (`iter1000`): `45.20%`
+  - delta: `-1.70` percentage points
+
+### Comparison vs Earlier Level2 Runs
+
+- tuned-level2 (`39.01%`) -> conservative+mix (`45.20%`): `+6.19` points
+- medium+mix (`40.80%`) -> conservative+mix (`45.20%`): `+4.40` points
+
+### Interpretation
+
+- Conservative + mixed reward is currently the best level2 variant tested so far.
+- It still underperforms official baseline slightly, but the gap is now much smaller (`-1.70`).
